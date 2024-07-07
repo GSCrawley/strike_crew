@@ -1,0 +1,129 @@
+from clarifai_grpc.grpc.api import resources_pb2, service_pb2
+from clarifai_grpc.grpc.api.status import status_code_pb2, status_pb2
+from collections.abc import Iterator
+from google.protobuf import json_format
+
+from clarifai.client.runner import Runner
+import time
+from threading import Thread
+
+import grpc
+import requests
+
+from transformers import (AutoModelForCausalLM, AutoTokenizer, TextIteratorStreamer)
+
+model_name_or_path = "TheBloke/Llama-2-7B-chat-GPTQ"
+model_basename = "model"
+use_triton = False
+tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, use_fast=True)
+model = AutoModelForCausalLM.from_pretrained(model_name_or_path, device_map='auto')
+streamer = TextIteratorStreamer(tokenizer)
+print("Model loaded")
+
+
+class MyRunner(Runner):
+  """A custom runner that adds "Hello World" to the end of the text and replaces the domain of the
+  image URL as an example.
+  """
+
+  def run_input(self, input: resources_pb2.Input, output_info: resources_pb2.OutputInfo,
+                **kwargs) -> resources_pb2.Output:
+    """This is the method that will be called when the runner is run. It takes in an input and
+    returns an output.
+    """
+
+    output = resources_pb2.Output()
+
+    data = input.data
+
+    # Optional use of output_info
+    params_dict = {}
+    if "params" in output_info:
+      params_dict = output_info["params"]
+
+    if data.text.raw != "":
+      output.data.text.raw = data.text.raw + "Hello World" + params_dict.get(
+          "hello", "") + kwargs.get("extra", "")
+    if data.image.url != "":
+      output.data.text.raw = data.image.url.replace("samples.clarifai.com",
+                                                    "newdomain.com" + params_dict.get("domain",))
+    return output
+
+  def generate(self, request: service_pb2.PostModelOutputsRequest
+              ) -> Iterator[service_pb2.MultiOutputResponse]:
+    """Example yielding a whole batch of streamed stuff back.
+    """
+
+    output_info = None
+    if request.model.model_version.id != "":
+      output_info = json_format.MessageToDict(
+          request.model.model_version.output_info, preserving_proto_field_name=True)
+
+    for inp in request.inputs:
+      data = inp.data
+      print('start')
+      if data.text.raw != "":
+        input_text = data.text.raw
+      elif data.text.url != "":
+        input_text = str(requests.get(data.text.url).text)
+      else:
+        raise Exception("Need to include data.text.raw or data.text.url in your inputs.")
+
+      st = time.time()
+      max_tokens = 1024
+      # # Method 1
+      inputs = tokenizer(input_text, return_tensors='pt') #.input_ids.cuda()
+      generation_kwargs = dict(inputs, streamer=streamer, max_new_tokens=max_tokens)
+      thread = Thread(target=model.generate, kwargs=generation_kwargs)
+      thread.start()
+      times = []
+      st = time.time()
+      total_start = st
+      for new_text in streamer:
+        duration = time.time() - st
+        st = time.time()
+        print(f"Duration: {duration}")
+        times.append(duration)
+        # for new_text in ["hello", "world", "i'm", "streaming"]:
+
+        # out = model.generate(inputs=input_ids, temperature=0.7, max_new_tokens=max_tokens)
+        # out_text = tokenizer.decode(out[0], skip_special_tokens=True)
+        # output.data.text.raw = out_text.replace(input_text, '')
+
+        # # # Method 2
+        # print('before')
+        # pipe = pipeline(
+        #     "text-generation",
+        #     model=model,
+        #     tokenizer=tokenizer,
+        #     streamer=streamer,
+        #     max_new_tokens=max_tokens,
+        #     temperature=0.7,
+        #     top_p=0.95,
+        #     repetition_penalty=1.15,
+        #     return_full_text=False)
+        # print('pipe')
+        # a = pipe(input_text)
+        # print(a)
+        print("Posting: ", new_text)
+        output = resources_pb2.Output()
+        output.data.text.raw = new_text
+        result = service_pb2.MultiOutputResponse(
+            status=status_pb2.Status(
+                code=status_code_pb2.SUCCESS,
+                description="Success",
+            ),
+            outputs=[output],
+        )
+        yield result
+      print(f"Total time: {time.time() - total_start}")
+      print(f"Average time: {sum(times) / len(times)}")
+
+
+if __name__ == '__main__':
+  # Make sure you set these env vars before running the example.
+  # CLARIFAI_PAT
+  # CLARIFAI_USER_ID
+
+  # You need to first create a runner in the Clarifai API and then use the ID here.
+  MyRunner(runner_id="matt-test-runner", base_url="http://q6:32013", num_parallel_polls=1).start()

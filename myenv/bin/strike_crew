@@ -1,0 +1,6 @@
+#!/Users/gideoncrawley/Projects/AI_Strike/myenv/bin/python
+import sys
+from strike_crew.main import run
+
+if __name__ == '__main__':
+    sys.exit(run())
