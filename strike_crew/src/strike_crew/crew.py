@@ -1,6 +1,15 @@
 from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 
+import os
+
+from groq import Groq
+
+client = Groq(
+    api_key=os.environ.get("GROQ_API_KEY"),
+)
+
+
 # Uncomment the following line to use an example of a custom tool
 # from strike_crew.tools.custom_tool import MyCustomTool
 
