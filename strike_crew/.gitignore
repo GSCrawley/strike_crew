@@ -3,4 +3,4 @@ __pycache__/
 myenv/
 .myenv/
 .myenv
-.lock 
+poetry.lock 
