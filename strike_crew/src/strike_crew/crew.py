@@ -11,7 +11,7 @@ client = Groq(
 
 
 # Uncomment the following line to use an example of a custom tool
-# from strike_crew.tools.custom_tool import MyCustomTool
+# from strike_crew.tools.custom_tool import NEO4JTool
 
 # Check our tools documentations for more information on how to use them
 # from crewai_tools import SerperDevTool
