@@ -1,6 +1,6 @@
 from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
-
+from tools.custom_tool import TwitterSearchTool
 import os
 
 from groq import Groq
@@ -42,6 +42,7 @@ class StrikeCrew():
         return Agent(
             config=self.agents_config['osint_analyst_1'],
             verbose=True
+            tools=[TwitterSearchTool()]
         )
 
     @agent
