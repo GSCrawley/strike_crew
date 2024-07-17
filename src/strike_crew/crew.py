@@ -1,83 +1,82 @@
 from crewai import Agent, Crew, Process, Task
-from crewai.project import CrewBase, agent, crew, task
-from crewai.tools import WebSearchTool
+from crewai_tools import SerperDevTool
 from strike_crew.tools.custom_tool import TwitterSearchTool, Neo4JSearchTool
+from dotenv import load_dotenv
 import os
-
 from groq import Groq
 
-client = Groq(
-    api_key=os.environ.get("GROQ_API_KEY"),
-)
+# Load environment variables from .env file
+load_dotenv()
 
-# Check our tools documentations for more information on how to use them
-# from crewai_tools import SerperDevTool
+print("TWITTER_API_KEY:", os.environ.get("TWITTER_API_KEY"))
+print("TWITTER_API_SECRET_KEY:", os.environ.get("TWITTER_API_KEY_SECRET"))
+print("TWITTER_ACCESS_TOKEN:", os.environ.get("TWITTER_ACCESS_TOKEN"))
+print("TWITTER_ACCESS_TOKEN_SECRET:", os.environ.get("TWITTER_ACCESS_TOKEN_SECRET"))
+print("NEO4J_URI:", os.environ.get("NEO4J_URI"))
+print("NEO4J_USER:", os.environ.get("NEO4J_USER"))
+print("NEO4J_PASSWORD:", os.environ.get("NEO4J_PASSWORD"))
+print("NEO4J_ENCRYPTED:", os.environ.get("NEO4J_ENCRYPTED"))
 
-@CrewBase
-class StrikeCrew():
-	"""StrikeCrew crew"""
-	agents_config = 'config/agents.yaml'
-	tasks_config = 'config/tasks.yaml'
-   
-agents = []
-tasks = []
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
+class StrikeCrew(Crew):
+    """StrikeCrew crew"""
 
-# @agent
-# def researcher(self) -> Agent:
-#     return Agent(
-#         config=self.agents_config['researcher'],
-#         tools= WebSearchTool(), # Example of custom tool, loaded on the beginning of file
-#         verbose=True
-#     )
+    def __init__(self, agents_config, tasks_config):
+        # Twitter API credentials
+        twitter_api_key = os.environ.get("TWITTER_API_KEY")
+        twitter_api_secret_key = os.environ.get("TWITTER_API_KEY_SECRET")
+        twitter_access_token = os.environ.get("TWITTER_ACCESS_TOKEN")
+        twitter_access_token_secret = os.environ.get("TWITTER_ACCESS_TOKEN_SECRET")
 
-# @agent
-# def reporting_analyst(self) -> Agent:
-#     return Agent(
-#         config=self.agents_config['reporting_analyst'],
-#         verbose=True
-    
-#     )
- 
-@agent
-def osint_analyst(self) -> Agent:   
-    return Agent(
-        config=self.agents_config['osint_analyst'],
-        verbose=True,
-        tools=[WebSearchTool(), TwitterSearchTool()]
-    )
+        # Neo4j credentials
+        neo4j_uri = os.environ.get("NEO4J_URI")
+        neo4j_user = os.environ.get("NEO4J_USER")
+        neo4j_password = os.environ.get("NEO4J_PASSWORD")
+        neo4j_encrypted = os.environ.get("NEO4J_ENCRYPTED") == "True"
 
-@task
-def osint_task(self) -> Task:
-    return Task(
-        description="Gather intelligence on targets",
-        expected_output="A list with bullet points containing the most relevant Twitter posts indicating the most recent Cybersecurity threats",
-        tools=[WebSearchTool(), TwitterSearchTool()]
-    )
+        # Initialize the custom tools with the credentials
+        twitter_tool = TwitterSearchTool(
+            api_key = twitter_api_key,
+            api_secret_key = twitter_api_secret_key,
+            access_token = twitter_access_token,
+            access_token_secret = twitter_access_token_secret
+        )
 
-@agent
-def validation_agent(self) -> Agent:
-    return Agent(
-        config=self.agents_config['validation_agent'],
-        verbose=True,
-        tools=[Neo4JSearchTool()]
-    )
+        neo4j_tool = Neo4JSearchTool(
+            uri = neo4j_uri,
+            user = neo4j_user,
+            password = neo4j_password,
+            encrypted = neo4j_encrypted
+        )
 
-@task
-def validation_task(self) -> Task:
-    return Task(
-        description="Validate the intelligence gathered by the OSINT agent",
-        expected_output="A confirmation that the gathered information matches known cyberattack techniques",
-        tools=[Neo4JSearchTool()]
-    )
+        agents = [
+            Agent(
+                config=agents_config['osint_analyst'],
+                verbose=True,
+                tools=[SerperDevTool(), twitter_tool]
+            ),
+            Agent(
+                config=agents_config['validation_agent'],
+                verbose=True,
+                tools=[neo4j_tool]
+            )
+        ]
 
+        tasks = [
+            Task(
+                description="Gather intelligence on targets",
+                expected_output="A list with bullet points containing the most relevant Twitter posts indicating the most recent Cybersecurity threats",
+                tools=[SerperDevTool(), twitter_tool],
+                agent=agents[0]
+            ),
+            Task(
+                description="Validate the intelligence gathered by the OSINT agent",
+                expected_output="A confirmation that the gathered information matches known cyberattack techniques",
+                tools=[neo4j_tool],
+                agent=agents[1]
+            )
+        ]
 
-@crew
-def crew(self) -> Crew: 
-    return Crew(
-	agents=self.agents, # Automatically created by the @agent decorator
-	tasks=self.tasks, # Automatically created by the @task decorator
-	process=Process.sequential,
-	verbose=2
-    )
-	# process=Process.se, # In case you wanna use that instead https://docs.crewai.com/how-to/Hierarchical/
+        # Initialize the Crew base class with agents and tasks
+        super().__init__(agents=agents, tasks=tasks, process=Process.sequential, verbose=2)

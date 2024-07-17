@@ -1,6 +1,12 @@
 from crewai_tools import BaseTool
 import tweepy
 from neo4j import GraphDatabase
+from pydantic import PrivateAttr, Field
+from dotenv import load_dotenv
+import os
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Example tweet data for testing
 Tweet = """This week started with an RCE in OpenSSH
@@ -22,6 +28,10 @@ class TwitterSearchTool(BaseTool):
     description: str = (
         "Use this tool to search Twitter for the latest news about Cybersecurity threats."
     )
+    api: tweepy.API = Field(default=None, exclude=True)  # Define the 'api' attribute
+
+    class Config:
+        arbitrary_types_allowed = True
 
     def __init__(self, api_key, api_secret_key, access_token, access_token_secret):
         super().__init__()
@@ -38,14 +48,18 @@ class TwitterSearchTool(BaseTool):
                 return "No tweets found for the given query."
         except Exception as e:
             return f"An error occurred: {str(e)}"
-        
+
 class Neo4JSearchTool(BaseTool):
     name: str = "Neo4J Search Tool"
     description: str = "Searches the Neo4J database to validate if the text contains known cyberattack techniques."
+    _driver: PrivateAttr() 
 
-    def __init__(self, uri, user, password):
-        self.driver = GraphDatabase.driver(uri, auth=(user, password))
+    class Config():
+        arbitrary_types_allowed = True
+
+    def __init__(self, uri, user, password, encrypted=False):
         super().__init__()
+        self._driver = GraphDatabase.driver(uri, auth=(user, password), encrypted=encrypted)
 
     def _run(self, text: str) -> bool:
         """
@@ -58,7 +72,7 @@ class Neo4JSearchTool(BaseTool):
             bool: True if the text matches known techniques, False otherwise.
         """
         labels = ["AttackTechnique", "IndicatorOfCompromise"]  # Adjust the labels as necessary
-        with self.driver.session() as session:
+        with self._driver.session() as session:
             for label in labels:
                 result = session.run(
                     f"MATCH (n:{label}) WHERE $text CONTAINS n.name RETURN n",
@@ -69,26 +83,4 @@ class Neo4JSearchTool(BaseTool):
         return False
 
     def close(self):
-        self.driver.close()
-
-# Example usage within a task
-if __name__ == "__main__":
-     # Replace with your actual Twitter API credentials
-    api_key = "your_api_key"
-    api_secret_key = "your_api_secret_key"
-    access_token = "your_access_token"
-    access_token_secret = "your_access_token_secret"
-
-    twitter_tool = TwitterSearchTool(api_key, api_secret_key, access_token, access_token_secret)
-    query = "cybersecurity threats"
-    result = twitter_tool._run(query)
-    print(result)
-    neo4j_tool = Neo4JSearchTool(uri='bolt://localhost:7687', user='neo4j', password='password')
-    intelligence_list = ["phishing attempt detected", "malware spread via email"]  # Example data
-    results = [neo4j_tool._run(intelligence) for intelligence in intelligence_list]
-
-    for intelligence, is_valid in zip(intelligence_list, results):
-        print(f"Intelligence: {intelligence}, Valid: {is_valid}")
-    
-    neo4j_tool.close()
-    twitter_tool.close()
+        self._driver.close()

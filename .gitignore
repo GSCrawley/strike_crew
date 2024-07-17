@@ -1,0 +1,8 @@
+.env
+env
+poetry.lock
+.lock
+myenv
+.myenv
+myenv/include/*
+__pycache__
