@@ -2,7 +2,7 @@
 name = "strike_crew"
 version = "0.1.0"
 description = "strike_crew using crewAI"
-authors = ["Gideon Crawley <you@example.com>"]
+authors = ["Gideon Crawley"]
 
 [tool.poetry.dependencies]
 python = ">=3.10,<=3.13"

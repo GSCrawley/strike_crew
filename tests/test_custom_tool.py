@@ -1,21 +1,22 @@
 import os
 from dotenv import load_dotenv
 import pytest
-from strike_crew.tools.custom_tool import TwitterSearchTool
+from strike_crew.tools.custom_tool import Neo4JSearchTool
 
 load_dotenv()
 
 @pytest.fixture
-def twitter_tool():
-    return TwitterSearchTool(
-        api_key=os.environ.get("TWITTER_API_KEY"),
-        api_secret_key=os.environ.get("TWITTER_API_SECRET_KEY"),
-        access_token=os.environ.get("TWITTER_ACCESS_TOKEN"),
-        access_token_secret=os.environ.get("TWITTER_ACCESS_TOKEN_SECRET")
+def neo4j_tool():
+    return Neo4JSearchTool(
+        uri=os.environ.get("NEO4J_URI"),
+        user=os.environ.get("NEO4J_USER"),
+        password=os.environ.get("NEO4J_PASSWORD"),
+        encrypted=os.environ.get("NEO4J_ENCRYPTED") == "True"
     )
 
-def test_twitter_search_tool(twitter_tool):
+def test_neo4j_search_tool(neo4j_tool):
     # Mock query for testing
-    query = "Cybersecurity"
-    result = twitter_tool._run(query)
-    assert "Tweet by" in result or "No tweets found" in result or "An error occurred" in result
+    query = "Threat"
+    result = neo4j_tool._run(query)
+    assert isinstance(result, list)
+

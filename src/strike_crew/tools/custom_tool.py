@@ -1,5 +1,4 @@
 from crewai_tools import BaseTool
-import tweepy
 from neo4j import GraphDatabase, exceptions
 from pydantic import PrivateAttr, Field
 from dotenv import load_dotenv
@@ -45,7 +44,7 @@ The relationships are the following
 """
 
 class Neo4jDatabase:
-    def __init__(self, host: str = "neo4j://localhost:7687", user: str = "neo4j", password: str = "neo4j", database: str = "neo4j", read_only: bool = True) -> None:
+    def __init__(self, host: str = "http://localhost:7474", user: str = os.getenv('NEO4J_USER'), password: str = os.getenv('NEO4J_PASSWORD'), database: str = "neo4j", read_only: bool = True) -> None:
         """Initialize a neo4j database"""
         self._driver = GraphDatabase.driver(host, auth=(user, password))
         self._database = database
@@ -122,7 +121,7 @@ class Neo4JSearchTool(BaseTool):
         Returns:
         bool: True if the text matches known techniques, False otherwise.
         """
-        labels = ["AttackTechnique", "IndicatorOfCompromise"]  # Adjust the labels as necessary
+        labels = ["AttackTechnique", "IndicatorOfCompromise", "IOC", "ThreatActor", "ThreatGroup", "ThreatSource", "Threat", "Vulnerability", "VulnerabilityCategory", "VulnerabilityType", "VulnerabilitySeverity", "VulnerabilityImpact", "VulnerabilityExploitability", "Exploitability", "CVSS", "AttackVector", "AttackMotivation", "AttackComplexity", "AttackConfidentialityImpact", "AttackIntegrityImpact", "AttackAvailabilityImpact", "AttackEnvironment", "AttackResource"]  # Adjust the labels as necessary
         for label in labels:
             result = self._neo4j_db.query(f"MATCH (n:{label}) WHERE $text CONTAINS n.name RETURN n", {"text": text})
             if result:
@@ -131,29 +130,3 @@ class Neo4JSearchTool(BaseTool):
 
     def close(self):
         self._neo4j_db._driver.close()
-
-class TwitterSearchTool(BaseTool):
-    name: str = "Search Twitter"
-    description: str = (
-        "Use this tool to search Twitter for the latest news about Cybersecurity threats."
-    )
-    api: tweepy.API = Field(default=None, exclude=True)  # Define the 'api' attribute
-
-    class Config:
-        arbitrary_types_allowed = True
-
-    def __init__(self, api_key, api_secret_key, access_token, access_token_secret):
-        super().__init__()
-        auth = tweepy.OAuth1UserHandler(api_key, api_secret_key, access_token, access_token_secret)
-        self.api = tweepy.API(auth)
-
-    def _run(self, query: str) -> str:
-        try:
-            tweets = self.api.search_tweets(q=query, count=1)
-            if tweets:
-                tweet = tweets[0]
-                return f"Tweet by {tweet.user.screen_name}: {tweet.text}"
-            else:
-                return "No tweets found for the given query."
-        except Exception as e:
-            return f"An error occurred: {str(e)}"

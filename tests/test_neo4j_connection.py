@@ -10,6 +10,18 @@ neo4j_uri = os.getenv('NEO4J_URI')
 neo4j_user = os.getenv('NEO4J_USER')
 neo4j_password = os.getenv('NEO4J_PASSWORD')
 
+# # Debugging statements to verify environment variables
+# print(f"Loaded from .env - NEO4J_URI: {neo4j_uri}")
+# print(f"Loaded from .env - NEO4J_USER: {neo4j_user}")
+# print(f"Loaded from .env - NEO4J_PASSWORD: {neo4j_password}")
+
+# # Fallback to default if .env loading fails
+# if not neo4j_password:
+#     print("Falling back to default password")
+#     neo4j_password = 'neo4jdbms'
+
+# print(f"Using NEO4J_PASSWORD: {neo4j_password}")
+
 def test_connection(uri, user, password):
     driver = GraphDatabase.driver(uri, auth=(user, password))
     try:
