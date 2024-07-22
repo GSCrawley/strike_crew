@@ -19,13 +19,13 @@ class StrikeCrew(Crew):
         neo4j_uri = os.environ.get("NEO4J_URI")
         neo4j_user = os.environ.get("NEO4J_USER")
         neo4j_password = os.environ.get("NEO4J_PASSWORD")
-        neo4j_encrypted = os.environ.get("NEO4J_ENCRYPTED") == "True"
+        # neo4j_encrypted = os.environ.get("NEO4J_ENCRYPTED") == "True"
 
         neo4j_tool = Neo4JSearchTool(
             uri = neo4j_uri,
             user = neo4j_user,
             password = neo4j_password,
-            encrypted = neo4j_encrypted
+            # encrypted = neo4j_encrypted
         )
 
         agents = [

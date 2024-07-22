@@ -1,132 +1,163 @@
 from crewai_tools import BaseTool
 from neo4j import GraphDatabase, exceptions
-from pydantic import PrivateAttr, Field
+# from pydantic import PrivateAttr
 from dotenv import load_dotenv
 import os
+import requests
+from bs4 import BeautifulSoup
 from typing import Any, Dict, List, Optional
 
-# Load environment variables from .env file
 load_dotenv()
 
-# Define the queries and utility function
-node_properties_query = """
-CALL apoc.meta.data()
-YIELD label, other, elementType, type, property
-WHERE NOT type = "RELATIONSHIP" AND elementType = "node"
-WITH label AS nodeLabels, collect({property:property, type:type}) AS properties
-RETURN {labels: nodeLabels, properties: properties} AS output
-"""
-
-rel_properties_query = """
-CALL apoc.meta.data()
-YIELD label, other, elementType, type, property
-WHERE NOT type = "RELATIONSHIP" AND elementType = "relationship"
-WITH label AS nodeLabels, collect({property:property, type:type}) AS properties
-RETURN {type: nodeLabels, properties: properties} AS output
-"""
-
-rel_query = """
-CALL apoc.meta.data()
-YIELD label, other, elementType, type, property
-WHERE type = "RELATIONSHIP" AND elementType = "node"
-RETURN "(:" + label + ")-[:" + property + "]->(:" + toString(other[0]) + ")" AS output
-"""
-
-def schema_text(node_props, rel_props, rels) -> str:
-    return f"""
-This is the schema representation of the Neo4j database.
-Node properties are the following:
-{node_props}
-Relationship properties are the following:
-{rel_props}
-The relationships are the following
-{rels}
-"""
+host = "bolt://localhost:7474"
+uri = os.getenv('NEO4J_URI')
+user = os.getenv('NEO4J_USER')
+password = os.getenv('NEO4J_PASSWORD')
 
 class Neo4jDatabase:
-    def __init__(self, host: str = "http://localhost:7474", user: str = os.getenv('NEO4J_USER'), password: str = os.getenv('NEO4J_PASSWORD'), database: str = "neo4j", read_only: bool = True) -> None:
-        """Initialize a neo4j database"""
-        self._driver = GraphDatabase.driver(host, auth=(user, password))
-        self._database = database
-        self._read_only = read_only
-        self.schema = ""
+    def __init__(self, host, user, password):
+        self.driver = GraphDatabase.driver(host, auth=(user, password))
+        self.refresh_schema()
+
+    def close(self):
+        self.driver.close()
+
+    def query(self, query, parameters=None):
+        with self.driver.session() as session:
+            result = session.run(query, parameters)
+            return [r.data() for r in result]
+
+    def refresh_schema(self):
+        node_properties_query = """
+        CALL apoc.meta.data()
+        YIELD label, other, elementType, type, property
+        WHERE NOT type = "RELATIONSHIP" AND elementType = "node"
+        WITH label AS nodeLabels, collect({property:property, type:type}) AS properties
+        RETURN {labels: nodeLabels, properties: properties} AS output
+        """
+        try:
+            node_props = [el["output"] for el in self.query(node_properties_query)]
+        except Exception as e:
+            raise ValueError(f"Failed to refresh schema: {e}")
+
+        rel_properties_query = """
+        CALL apoc.meta.data()
+        YIELD label, other, elementType, type, property
+        WHERE type = "RELATIONSHIP" AND elementType = "relationship"
+        WITH label AS relLabels, collect({property:property, type:type}) AS properties
+        RETURN {labels: relLabels, properties: properties} AS output
+        """
+        rel_query = """
+        MATCH (n)-[r]->(m)
+        RETURN distinct type(r) as output
+        """
         
-        # Verify connection
         try:
-            self._driver.verify_connectivity()
-        except exceptions.ServiceUnavailable:
-            raise ValueError("Could not connect to Neo4j database. Please ensure that the url is correct")
-        except exceptions.AuthError:
-            raise ValueError("Could not connect to Neo4j database. Please ensure that the username and password are correct")
-        try:
-            self.refresh_schema()
-        except:
-            raise ValueError("Missing APOC Core plugin")
+            rel_props = [el["output"] for el in self.query(rel_properties_query)]
+            rels = [el["output"] for el in self.query(rel_query)]
+        except Exception as e:
+            raise ValueError(f"Failed to refresh relationships: {e}")
 
-    @staticmethod
-    def _execute_read_only_query(tx, cypher_query: str, params: Optional[Dict] = {}):
-        result = tx.run(cypher_query, params)
-        return [r.data() for r in result]
-
-    def query(self, cypher_query: str, params: Optional[Dict] = {}) -> List[Dict[str, Any]]:
-        with self._driver.session(database=self._database) as session:
-            try:
-                if self._read_only:
-                    result = session.read_transaction(self._execute_read_only_query, cypher_query, params)
-                else:
-                    result = session.run(cypher_query, params)
-                # Limit to at most 10 results
-                return [r.data() for r in result]
-            except exceptions.CypherSyntaxError as e:
-                return [{"code": "invalid_cypher", "message": f"Invalid Cypher statement due to an error: {e}"}]
-            except exceptions.ClientError as e:
-                # Catch access mode errors
-                if e.code == "Neo.ClientError.Statement.AccessMode":
-                    return [{"code": "error", "message": "Couldn't execute the query due to the read only access to Neo4j"}]
-                else:
-                    return [{"code": "error", "message": e}]
-
-    def refresh_schema(self) -> None:
-        node_props = [el["output"] for el in self.query(node_properties_query)]
-        rel_props = [el["output"] for el in self.query(rel_properties_query)]
-        rels = [el["output"] for el in self.query(rel_query)]
-        schema = schema_text(node_props, rel_props, rels)
+        schema = self.schema_text(node_props, rel_props, rels)
         self.schema = schema
         print(schema)
 
-    def check_if_empty(self) -> bool:
-        data = self.query(
-            """
-            MATCH (n)
-            WITH count(n) as c
-            RETURN CASE WHEN c > 0 THEN true ELSE false END AS output
-            """
-        )
-        return data[0]["output"]
-
+    def schema_text(self, node_props, rel_props, rels):
+        schema = "Node Properties: \n"
+        for prop in node_props:
+            schema += f"{prop}\n"
+        schema += "Relationship Properties: \n"
+        for prop in rel_props:
+            schema += f"{prop}\n"
+        schema += "Relationships: \n"
+        for rel in rels:
+            schema += f"{rel}\n"
+        return schema
+    
 class Neo4JSearchTool(BaseTool):
-    name: str = "Neo4J Search Tool"
-    description: str = "Searches the Neo4J database to validate if the text contains known cyberattack techniques."
-    _neo4j_db: Neo4jDatabase = PrivateAttr()
+    description: str = "A tool to query Neo4j database using APOC procedures."
+    def __init__(self, uri, user, password):
+        super().__init__()
+        self._neo4j_db = Neo4jDatabase(host=uri, user=user, password=password)
+        # Raise an error if the APOC plugin is not available
+        try:
+            self._neo4j_db.query("CALL apoc.help('apoc')")
+        except Exception as e:
+            raise ValueError("Missing APOC Core plugin") from e
 
-    def __init__(self, uri, user, password, encrypted=False):
+    def run(self, query: str) -> str:
+        try:
+            result = self._neo4j_db.query(query)
+            return str(result)
+        except Exception as e:
+            return f"Query failed: {e}"
+
+    def __del__(self):
+        if hasattr(self, '_neo4j_db'):
+            self._neo4j_db.close()
+
+class WebSearchTool(BaseTool):
+    name: str = "Web Search"
+    description: str = "Searches the web for information based on user queries."
+
+    def _run(self, query: str) -> list:
+        # Placeholder implementation - replace with actual web search logic or API call
+        search_results = [
+            "https://www.example.com/page1",
+            "https://www.example.com/page2",
+            "https://www.example.com/page3"
+        ]
+        return search_results
+
+class WebScraperTool(BaseTool):
+    name: str = "Web Scraper"
+    description: str = "Scrapes content from a list of URLs."
+
+    def _run(self, urls: list) -> dict:
+        results = {}
+        for url in urls:
+            try:
+                response = requests.get(url)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.content, 'html.parser')
+                text_content = soup.get_text()
+                results[url] = text_content.strip()
+            except requests.RequestException as e:
+                results[url] = f"An error occurred while fetching the URL: {str(e)}"
+        return results
+
+class NLPTool(BaseTool):
+    name: str = "NLP Tool"
+    description: str = "Processes text to extract threat intelligence entities."
+
+    def _run(self, content: str) -> dict:
+        # Placeholder implementation - replace with actual NLP processing logic
+        entities = {
+            "threat_actors": ["Actor1", "Actor2"],
+            "CVEs": ["CVE-2021-12345", "CVE-2021-67890"],
+            "TTPs": ["Phishing", "Malware"],
+            "IOCs": ["192.168.1.1", "example.com"]
+        }
+        return entities
+
+class Neo4JUpdateTool(BaseTool):
+    name: str = "Neo4J Update"
+    description: str = "Updates Neo4J database with new knowledge graphs."
+
+    def __init__(self, uri, user, password):
         super().__init__()
         self._neo4j_db = Neo4jDatabase(host=uri, user=user, password=password)
 
-    def _run(self, text: str) -> bool:
-        """
-        Search the Neo4J database to validate if the text contains known cyberattack techniques.
-        Args:
-        text (str): The text to search within.
-        Returns:
-        bool: True if the text matches known techniques, False otherwise.
-        """
-        labels = ["AttackTechnique", "IndicatorOfCompromise", "IOC", "ThreatActor", "ThreatGroup", "ThreatSource", "Threat", "Vulnerability", "VulnerabilityCategory", "VulnerabilityType", "VulnerabilitySeverity", "VulnerabilityImpact", "VulnerabilityExploitability", "Exploitability", "CVSS", "AttackVector", "AttackMotivation", "AttackComplexity", "AttackConfidentialityImpact", "AttackIntegrityImpact", "AttackAvailabilityImpact", "AttackEnvironment", "AttackResource"]  # Adjust the labels as necessary
-        for label in labels:
-            result = self._neo4j_db.query(f"MATCH (n:{label}) WHERE $text CONTAINS n.name RETURN n", {"text": text})
-            if result:
-                return True
-        return False
+    def _run(self, entities: dict) -> str:
+        try:
+            with self._neo4j_db._driver.session(database=self._neo4j_db._database) as session:
+                for entity_type, entity_list in entities.items():
+                    for entity in entity_list:
+                        query = f"MERGE (e:{entity_type} {{name: '{entity}'}})"
+                        session.run(query)
+            return "Neo4J database updated successfully."
+        except Exception as e:
+            return f"Failed to update Neo4J database: {str(e)}"
 
     def close(self):
         self._neo4j_db._driver.close()
