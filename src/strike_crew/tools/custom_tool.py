@@ -108,11 +108,20 @@ class Neo4JSearchTool(BaseTool):
         if hasattr(self, '_neo4j_db'):
             self._neo4j_db.close()
 
-class WebSearchTool(BaseTool):
+class CustomWebSearchTool(BaseTool):
     name: str = "Web Search"
     description: str = "Searches the web for information based on user queries."
 
-    def _run(self, query: str) -> list:
+    def _run(self, query: str, emerging_threat: EmergingThreat) -> list:
+        # Fine-tune the search query with the indicators in the EmergingThreat dataclass
+        refined_query = f"{query} {' '.join(emerging_threat.ioc.keys())} {' '.join(emerging_threat.ttps.keys())} {' '.join(emerging_threat.threat_actors)} {' '.join(emerging_threat.cve_ids)}"
+        # Placeholder implementation - replace with actual web search logic or API call
+        search_results = [
+            "https://www.example.com/page1",
+            "https://www.example.com/page2",
+            "https://www.example.com/page3"
+        ]
+        return search_results
         # Placeholder implementation - replace with actual web search logic or API call
         search_results = [
             "https://www.example.com/page1",
@@ -138,11 +147,15 @@ class WebScraperTool(BaseTool):
                 results[url] = f"An error occurred while fetching the URL: {str(e)}"
         return results
 
-class NLPTool(BaseTool):
+class DiffbotNLPTool(BaseTool):
     name: str = "NLP Tool"
     description: str = "Processes text to extract threat intelligence entities."
 
     def _run(self, content: str) -> dict:
+        # Use Diffbot NLP tool to process and sort scraped information into entities and relationships
+        response = diffbot_nlp.nlp_request(content)
+        entities = diffbot_nlp.process_response(response, content)
+        return entities
         # Placeholder implementation - replace with actual NLP processing logic
         entities = {
             "threat_actors": ["Actor1", "Actor2"],
@@ -152,7 +165,7 @@ class NLPTool(BaseTool):
         }
         return entities
 
-class Neo4JUpdateTool(BaseTool):
+class DiffbotGraphUpdateTool(BaseTool):
     name: str = "Neo4J Update"
     description: str = "Updates Neo4J database with new knowledge graphs."
 
@@ -161,6 +174,10 @@ class Neo4JUpdateTool(BaseTool):
         self._neo4j_db = Neo4jDatabase(host=uri, user=user, password=password)
 
     def _run(self, entities: dict) -> str:
+        # Create new knowledge graphs in Neo4J using DiffbotGraphTransformer
+        graph_documents = diffbot_nlp.convert_to_graph_documents(entities)
+        graph.add_graph_documents(graph_documents)
+        return "Neo4J database updated successfully."
         try:
             with self._neo4j_db._driver.session(database=self._neo4j_db._database) as session:
                 for entity_type, entity_list in entities.items():

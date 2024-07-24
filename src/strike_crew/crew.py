@@ -28,7 +28,25 @@ class StrikeCrew(Crew):
             # encrypted = neo4j_encrypted
         )
 
-        agents = [
+        crew_manager_agent = Agent(
+            config=agents_config['crew_manager_agent'],
+            verbose=True,
+            tools=[]
+        )
+
+        osint_analyst = Agent(
+            config=agents_config['osint_analyst'],
+            verbose=True,
+            tools=[SerperDevTool()]
+        )
+
+        validation_agent = Agent(
+            config=agents_config['validation_agent'],
+            verbose=True,
+            tools=[neo4j_tool]
+        )
+
+        agents = [crew_manager_agent, osint_analyst, validation_agent]
             Agent(
                 config=agents_config['osint_analyst'],
                 verbose=True,
@@ -46,7 +64,21 @@ class StrikeCrew(Crew):
             # )
         ]
 
-        tasks = [
+        search_task = Task(
+            description=tasks_config['search_task']['description'],
+            expected_output=tasks_config['search_task']['expected_output'],
+            tools=[SerperDevTool()],
+            agent=osint_analyst
+        )
+
+        validation_task = Task(
+            description=tasks_config['validation_task']['description'],
+            expected_output=tasks_config['validation_task']['expected_output'],
+            tools=[neo4j_tool],
+            agent=validation_agent
+        )
+
+        tasks = [search_task, validation_task]
             Task(
                 description="Gather intelligence on targets",
                 expected_output="A list with bullet points containing the most relevant Twitter posts indicating the most recent Cybersecurity threats",
