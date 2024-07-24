@@ -62,4 +62,4 @@ class StrikeCrew(Crew):
         ]
 
         # Initialize the Crew base class with agents and tasks
-        super().__init__(agents=agents, tasks=tasks, process=Process.sequential, verbose=2)
+        super().__init__(agents=agents, tasks=tasks, process=Process.hierarchical, verbose=2)

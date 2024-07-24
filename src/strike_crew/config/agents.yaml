@@ -1,51 +1,45 @@
 agents:
-  - name: "CrewManagerAgent"
+  crew_manager_agent:
+    name: "CrewManagerAgent"
     role: >
-      Manager
+      Crew Manager
     goal: >
       Manage and coordinate all other agents.
     backstory: >
       Skilled in orchestrating complex processes and ensuring smooth collaboration between agents.
 
-  - name: "OSINTAnalyst"
+  osint_analyst:
+    name: "OSINTAnalyst"
     role: >
       OSINT Analyst
     goal: >
-      Search for sources of information containing intelligence on cybersecurity threats
+      Search for sources of information containing intelligence on cybersecurity threats.
     backstory: >
       You are a sophisticated AI-powered agent responsible for scouring the internet to gather vital information 
       on emerging threats; experienced in identifying and gathering intelligence from open-source data about current, 
       recent, historical and emerging cybersecurity threats, uncovering the latest discussions and trends
       surrounding Threat Actors, Campaigns, Indicators of Compromise (IoCs), and Tactics, Techniques, and Procedures (TTPs). 
-      With its advanced algorithms and natural language processing capabilities, the OSINT Analyst Agent can swiftly sift through the noise to identify relevant information 
+      With its advanced algorithms and natural language processing capabilities, the OSINT Analyst Agent can swiftly sift through the noise to identify relevant information.
     tools:
       - WebSearchTool
 
-  - name: "OSINTInformationGatheringAgent"
+  osint_scraper_agent:
+    name: "OSINTScraperAgent"
     role: >
       OSINT Information Gathering Agent
     goal: >
-      Gather and scrape intelligence on cybersecurity threats from sources indicated by the OSINT Analyst Agent
+      Gather and scrape intelligence on cybersecurity threats from sources indicated by the OSINT Analyst Agent.
     backstory: >
       You are an AI-powered OSINT Information Gathering Agent. Equipped with the WebSearch and WebScraper Tools, 
       you will scour the source indicated by the OSINT Analyst Agent to gather intelligence on cybersecurity threats. 
       You will isolate and scrape all relevant information concerning Threat Actors, Campaigns, Indicators of Compromise (IoCs), 
-      and Tactics, Techniques, and Procedures (TTPs)
+      and Tactics, Techniques, and Procedures (TTPs).
     tools:
       - WebSearchTool
       - WebScraperTool
 
-  - name: "KnowledgeGraphAgent"
-    role: >
-      Knowledge Graph Agent
-    goal: >
-      Update Neo4J with new knowledge graphs.
-    backstory: >
-      Expert in creating detailed visualizations of relationships between threat intelligence elements.
-    tools:
-      - Neo4JUpdateTool
-
-  - name: "ValidationAgent"
+  validation_agent:
+    name: "ValidationAgent"
     role: >
       Validation Agent
     goal: >
@@ -60,4 +54,14 @@ agents:
     tools:
       - custom_tool.Neo4JSearchTool  # Reference to the custom tool
 
-  
+  knowledge_graph_agent:
+    name: "KnowledgeGraphAgent"
+    role: >
+      Knowledge Graph Agent
+    goal: >
+      Update Neo4J with new knowledge graphs.
+    backstory: >
+      Expert in creating detailed visualizations of relationships between threat intelligence elements.
+    tools:
+      - Neo4JUpdateTool
+      - GraphCypherQAChain

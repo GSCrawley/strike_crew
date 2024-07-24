@@ -6,6 +6,11 @@ import os
 import requests
 from bs4 import BeautifulSoup
 from typing import Any, Dict, List, Optional
+import dataclasses
+from langchain_community.graphs import Neo4jGraph
+from langchain_experimental.graph_transformers.diffbot import DiffbotGraphTransformer
+
+
 
 load_dotenv()
 
@@ -13,6 +18,12 @@ host = "bolt://localhost:7474"
 uri = os.getenv('NEO4J_URI')
 user = os.getenv('NEO4J_USER')
 password = os.getenv('NEO4J_PASSWORD')
+nlp_api_key = os.getenv('DIFFBOT_NLP_API_TOKEN')
+
+diffbot_nlp = DiffbotGraphTransformer(nlp_api_key=nlp_api_key)
+
+graph = Neo4jGraph(url=uri, username=user, password=password)
+
 
 class Neo4jDatabase:
     def __init__(self, host, user, password):
@@ -75,6 +86,7 @@ class Neo4jDatabase:
         return schema
     
 class Neo4JSearchTool(BaseTool):
+    name: str = "Neo4J Search"
     description: str = "A tool to query Neo4j database using APOC procedures."
     def __init__(self, uri, user, password):
         super().__init__()
@@ -85,7 +97,7 @@ class Neo4JSearchTool(BaseTool):
         except Exception as e:
             raise ValueError("Missing APOC Core plugin") from e
 
-    def run(self, query: str) -> str:
+    def _run(self, query: str) -> str:
         try:
             result = self._neo4j_db.query(query)
             return str(result)

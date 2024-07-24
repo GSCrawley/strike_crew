@@ -6,3 +6,4 @@ myenv
 .myenv
 myenv/include/*
 __pycache__
+.aider*

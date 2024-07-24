@@ -1,23 +1,26 @@
 tasks:
-  - name: "SearchTask"
-    description: >
+  search_task:
+    name: "SearchTask"
+    description: > 
       Search the web for information on cybersecurity threats based on user queries and provide a list of URLs.
     expected_output: >
       A list of URLs containing relevant information about cybersecurity threats.
-    inputs:
+    inputs: 
       - name: "query"
-    agent: "OSINTAnalyst"
-
-  - name: "GatheringTask"
+    agent: "osint_analyst"
+  
+  gathering_task:
+    name: "GatheringTask"
     description: >
       Gather and scrape intelligence on cybersecurity threats from the provided URLs.
     expected_output: >
       Extracted information from the URLs, including Threat Actors, Campaigns, IoCs, and TTPs.
     inputs:
       - name: "urls"
-    agent: "OSINTInformationGatheringAgent"
+    agent: "OSINTScraperAgent"
 
-  - name: "ValidationTask"
+  validation_task:
+    name: "ValidationTask"
     description: >
       Verify the accuracy and relevance of the intelligence gathered by the OSINT agents.
     expected_output: >
@@ -26,6 +29,7 @@ tasks:
       - name: "intelligence"
     agent: "ValidationAgent"
 
+  graph_update_task:
   - name: "GraphUpdateTask"
     description: >
       Update the Neo4J database with new knowledge graphs based on the verified intelligence data.
