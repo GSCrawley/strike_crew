@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 import dataclasses
 from langchain_community.graphs import Neo4jGraph
 from langchain_experimental.graph_transformers.diffbot import DiffbotGraphTransformer
+from strike_crew.models import EmergingThreat
 
 
 

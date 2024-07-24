@@ -47,22 +47,6 @@ class StrikeCrew(Crew):
         )
 
         agents = [crew_manager_agent, osint_analyst, validation_agent]
-            Agent(
-                config=agents_config['osint_analyst'],
-                verbose=True,
-                tools=[SerperDevTool()]
-            ),
-            Agent(
-                config=agents_config['validation_agent'],
-                verbose=True,
-                tools=[neo4j_tool]
-            ),
-            # Agent(
-            #     config=agents_config['knowledge_graph_agent'],
-            #     verbose=True,
-            #     tools=[knowledge_graph_tool]
-            # )
-        ]
 
         search_task = Task(
             description=tasks_config['search_task']['description'],
@@ -79,19 +63,6 @@ class StrikeCrew(Crew):
         )
 
         tasks = [search_task, validation_task]
-            Task(
-                description="Gather intelligence on targets",
-                expected_output="A list with bullet points containing the most relevant Twitter posts indicating the most recent Cybersecurity threats",
-                tools=[SerperDevTool()],
-                agent=agents[0]
-            ),
-            Task(
-                description="Validate the intelligence gathered by the OSINT agent",
-                expected_output="A confirmation that the gathered information matches known cyberattack techniques",
-                tools=[neo4j_tool],
-                agent=agents[1]
-            )
-        ]
 
         # Initialize the Crew base class with agents and tasks
         super().__init__(agents=agents, tasks=tasks, process=Process.hierarchical, verbose=2)
