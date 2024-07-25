@@ -33,4 +33,31 @@ agents:
       Expert in extracting data from multiple sources to provide comprehensive intelligence.
     tools:
       - WebScraperTool
+
+  validation_agent:
+    name: "validation_agent"
+    role: >
+      Validation Agent
+    goal: >
+      Verify the accuracy and relevance of the intelligence gathered by the OSINT agents.
+    backstory: >
+      Expert in verifying the accuracy and relevance of the intelligence gathered by the OSINT agents.
+    tools:
+      - Neo4JSearchTool
+      - DiffbotGraphSearchTool
+  
+  knowledge_graph_agent:
+    name: "knowledge_graph_agent"
+    role: >
+      Knowledge Graph Agent
+    goal: >
+      Create a knowledge graph from the intelligence gathered by the OSINT agents.
+    backstory: >
+      Expert in creating a knowledge graph from the intelligence gathered by the OSINT agents.
+    tools:
+      - DiffbotGraphUpdateTool
+      - DiffbotNLPTool
+
+
+  
  
