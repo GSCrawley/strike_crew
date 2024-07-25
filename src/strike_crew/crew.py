@@ -31,8 +31,8 @@ class Crew:
 
          # Remove 'tools' from config before passing it to Agent
         osint_analyst_config = agents_config['agents']['osint_analyst'].copy()
-        osint_analyst_tools = {tool.name: tool for tool in agents_config['agents']['osint_analyst'].get('tools', [])}
-        validation_agent_tools = {tool.name: tool for tool in agents_config['agents']['validation_agent'].get('tools', [])}
+        osint_analyst_tools = {tool: globals()[tool]() for tool in agents_config['agents']['osint_analyst'].get('tools', [])}
+        validation_agent_tools = {tool: globals()[tool]() for tool in agents_config['agents']['validation_agent'].get('tools', [])}
 
         osint_analyst = Agent(
             config=osint_analyst_config,
