@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 import sys
 import os
-from strike_crew.crew import StrikeCrew
+from strike_crew.crew import Crew
+from strike_crew.config_loader import load_config
 import yaml
 
 def load_config(file_path):
@@ -13,18 +14,27 @@ def main():
     config_dir = os.path.join(base_dir, 'config')
     agents_config_path = os.path.join(config_dir, 'agents.yaml')
     tasks_config_path = os.path.join(config_dir, 'tasks.yaml')
-    
-    print(f"Base directory: {base_dir}")
-    print(f"Config directory: {config_dir}")
-    print(f"Agents config path: {agents_config_path}")
-    print(f"Tasks config path: {tasks_config_path}")
 
     # Load agent and task configurations
     agents_config = load_config(agents_config_path)
     tasks_config = load_config(tasks_config_path)
+
+    # Debug: Print the loaded configurations
+    print("Agents Config:", agents_config)
+    print("Tasks Config:", tasks_config)
     
+    # # Check if 'crew_manager' key exists
+    # if 'crew_manager' not in agents_config.get('agents', {}):
+    #     print("Error: 'crew_manager' key not found in agents_config['agents']")
+    #     sys.exit(1)
+    
+    #     # Check if 'osint_analyst' key exists within 'agents'
+    # if 'osint_analyst' not in agents_config.get('agents', {}):
+    #     print("Error: 'osint_analyst' key not found in agents_config['agents']")
+    #     sys.exit(1)
+
     # Initialize the StrikeCrew with loaded configurations
-    strike_crew = StrikeCrew(agents_config=agents_config, tasks_config=tasks_config)
+    strike_crew = Crew(agents_config=agents_config, tasks_config=tasks_config)
     
     # Kickoff the crew process
     result = strike_crew.kickoff()

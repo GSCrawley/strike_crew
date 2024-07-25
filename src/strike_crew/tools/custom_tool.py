@@ -12,7 +12,6 @@ from langchain_experimental.graph_transformers.diffbot import DiffbotGraphTransf
 from strike_crew.models import EmergingThreat
 
 
-
 load_dotenv()
 
 host = "bolt://localhost:7474"
@@ -21,7 +20,7 @@ user = os.getenv('NEO4J_USER')
 password = os.getenv('NEO4J_PASSWORD')
 nlp_api_key = os.getenv('DIFFBOT_NLP_API_TOKEN')
 
-diffbot_nlp = DiffbotGraphTransformer(nlp_api_key=nlp_api_key)
+diffbot_nlp = DiffbotGraphTransformer(nlp_api_key)
 
 graph = Neo4jGraph(url=uri, username=user, password=password)
 
@@ -109,7 +108,7 @@ class Neo4JSearchTool(BaseTool):
         if hasattr(self, '_neo4j_db'):
             self._neo4j_db.close()
 
-class CustomWebSearchTool(BaseTool):
+class WebSearchTool(BaseTool):
     name: str = "Web Search"
     description: str = "Searches the web for information based on user queries."
 
