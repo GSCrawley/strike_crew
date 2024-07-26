@@ -17,7 +17,7 @@ tasks:
       Extracted information from the URLs, including Threat Actors, Campaigns, IoCs, and TTPs.
     inputs:
       - name: "urls"
-    agent: "OSINTScraperAgent"
+    agent: "osint_scraper_agent"
 
   validation_task:
     name: "ValidationTask"
@@ -27,7 +27,7 @@ tasks:
       A list of verified intelligence data, cross-referenced with the Neo4J database.
     inputs:
       - name: "intelligence"
-    agent: "ValidationAgent"
+    agent: "validation_agent"
 
   graph_update_task:
   - name: "GraphUpdateTask"

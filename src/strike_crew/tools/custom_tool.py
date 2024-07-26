@@ -4,12 +4,14 @@ from neo4j import GraphDatabase, exceptions
 from dotenv import load_dotenv
 import os
 import requests
+import pprint
 from bs4 import BeautifulSoup
 from typing import Any, Dict, List, Optional
-import dataclasses
 from langchain_community.graphs import Neo4jGraph
 from langchain_experimental.graph_transformers.diffbot import DiffbotGraphTransformer
-from strike_crew.models import EmergingThreat
+from langchain_community.utilities import GoogleSerperAPIWrapper
+from langchain_core.tools import Tool
+from strike_crew.models import EmergingThreat, dataclasses
 
 
 load_dotenv()
@@ -18,9 +20,13 @@ host = "bolt://localhost:7474"
 uri = os.getenv('NEO4J_URI')
 user = os.getenv('NEO4J_USER')
 password = os.getenv('NEO4J_PASSWORD')
-nlp_api_key = os.getenv('DIFFBOT_NLP_API_TOKEN')
+nlp = os.getenv('DIFFBOT_NLP_API_TOKEN')
+custom_search = os.getenv('GOOGLE_API_KEY')
+google_serper = os.getenv('GOOGLE_SERPER_API_KEY')
+search_engine = os.getenv('GOOGLE_CSE_ID')
 
-diffbot_nlp = DiffbotGraphTransformer(nlp_api_key)
+
+diffbot_nlp = DiffbotGraphTransformer(nlp)
 
 graph = Neo4jGraph(url=uri, username=user, password=password)
 
@@ -107,6 +113,15 @@ class Neo4JSearchTool(BaseTool):
     def __del__(self):
         if hasattr(self, '_neo4j_db'):
             self._neo4j_db.close()
+
+
+search = GoogleSerperAPIWrapper()
+search_tool = Tool(
+   
+    name = "google_search",
+    description = "Searches the web for information based on user queries.",
+    func=search.run
+)
 
 class WebSearchTool(BaseTool):
     name: str = "Web Search"
