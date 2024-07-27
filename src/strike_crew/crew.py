@@ -1,6 +1,5 @@
 from crewai import Agent, Crew, Process, Task
-from crewai_tools import SerperDevTool
-from strike_crew.tools.custom_tool import Neo4JSearchTool
+from strike_crew.tools.custom_tool import Neo4JSearchTool, WebSearchTool
 from dotenv import load_dotenv
 import os
 from groq import Groq
@@ -9,12 +8,12 @@ from groq import Groq
 load_dotenv()
 
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+api_key = os.environ.get("GOOGLE_SERPER_API_KEY")
 
  # Neo4j credentials
 neo4j_uri = os.environ.get("NEO4J_URI")
 neo4j_user = os.environ.get("NEO4J_USER")
 neo4j_password = os.environ.get("NEO4J_PASSWORD")
-# neo4j_encrypted = os.environ.get("NEO4J_ENCRYPTED") == "True"
 
 class Crew:
     """StrikeCrew crew"""
@@ -29,19 +28,30 @@ class Crew:
         self.crew_manager_config = agents_config['agents']['crew_manager']
         self.tasks_config = tasks_config
 
+        api_key = os.getenv('GOOGLE_SERPER_API_KEY')
+        print(f"GOOGLE_SERPER_API_KEY: {api_key}")
+
          # Remove 'tools' from config before passing it to Agent
         osint_analyst_config = agents_config['agents']['osint_analyst'].copy()
-        osint_analyst_tools = {tool: globals()[tool]() for tool in agents_config['agents']['osint_analyst'].get('tools', [])}
-        validation_agent_tools = {tool: globals()[tool]() for tool in agents_config['agents']['validation_agent'].get('tools', [])}
+        osint_analyst_tools = {
+            tool: WebSearchTool(api_key=api_key) 
+            if tool == "custom_tool.WebSearchTool" 
+            else globals()[tool]() 
+            for tool in agents_config['agents']['osint_analyst'].get('tools', [])
+        }
+        
+        validation_agent_tools = {
+            tool: globals()[tool]() 
+            for tool in agents_config['agents']['validation_agent'].get('tools', [])
+        }
 
         osint_analyst = Agent(
             config=osint_analyst_config,
             verbose=True,
-            tools={SerperDevTool().name: SerperDevTool()} | osint_analyst_tools
+            tools={WebSearchTool(api_key).name: WebSearchTool(api_key)} | osint_analyst_tools
         )
 
         validation_agent_config = agents_config['agents']['validation_agent'].copy()
-        validation_agent_tools = validation_agent_config.pop('tools', [])
 
         validation_agent = Agent(
             config=validation_agent_config,

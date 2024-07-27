@@ -1,6 +1,6 @@
 from crewai_tools import BaseTool
-from neo4j import GraphDatabase, exceptions
-# from pydantic import PrivateAttr
+from neo4j import GraphDatabase
+# from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 import os
 import requests
@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 from typing import Any, Dict, List, Optional
 from langchain_community.graphs import Neo4jGraph
 from langchain_experimental.graph_transformers.diffbot import DiffbotGraphTransformer
-from langchain_community.utilities import GoogleSerperAPIWrapper
+from langchain.tools import GoogleSerperAPIWrapper
 from langchain_core.tools import Tool
 from strike_crew.models import EmergingThreat, dataclasses
 
@@ -22,7 +22,7 @@ user = os.getenv('NEO4J_USER')
 password = os.getenv('NEO4J_PASSWORD')
 nlp = os.getenv('DIFFBOT_NLP_API_TOKEN')
 custom_search = os.getenv('GOOGLE_API_KEY')
-google_serper = os.getenv('GOOGLE_SERPER_API_KEY')
+api_key = os.getenv('GOOGLE_SERPER_API_KEY')
 search_engine = os.getenv('GOOGLE_CSE_ID')
 
 
@@ -115,35 +115,28 @@ class Neo4JSearchTool(BaseTool):
             self._neo4j_db.close()
 
 
-search = GoogleSerperAPIWrapper()
-search_tool = Tool(
-   
-    name = "google_search",
-    description = "Searches the web for information based on user queries.",
-    func=search.run
-)
-
 class WebSearchTool(BaseTool):
     name: str = "Web Search"
     description: str = "Searches the web for information based on user queries."
 
-    def _run(self, query: str, emerging_threat: EmergingThreat) -> list:
-        # Fine-tune the search query with the indicators in the EmergingThreat dataclass
-        refined_query = f"{query} {' '.join(emerging_threat.ioc.keys())} {' '.join(emerging_threat.ttps.keys())} {' '.join(emerging_threat.threat_actors)} {' '.join(emerging_threat.cve_ids)}"
-        # Placeholder implementation - replace with actual web search logic or API call
-        search_results = [
-            "https://www.example.com/page1",
-            "https://www.example.com/page2",
-            "https://www.example.com/page3"
-        ]
-        return search_results
-        # Placeholder implementation - replace with actual web search logic or API call
-        search_results = [
-            "https://www.example.com/page1",
-            "https://www.example.com/page2",
-            "https://www.example.com/page3"
-        ]
-        return search_results
+    def __init__(self, api_key: str):
+        self.search = GoogleSerperAPIWrapper(api_key=api_key)
+
+    def _run(self, query: str) -> str:
+        try:
+            results = self.search.run(query)
+            return results
+        except Exception as e:
+            return f"An error occurred: {str(e)}"
+
+if __name__ == "__main__":
+    # Replace with your actual Google Serper API key
+    api_key = api_key
+    web_search_tool = WebSearchTool(api_key=api_key)
+    query = "latest cybersecurity threats"
+    result = web_search_tool._run(query)
+    print(result)
+
 
 class WebScraperTool(BaseTool):
     name: str = "Web Scraper"

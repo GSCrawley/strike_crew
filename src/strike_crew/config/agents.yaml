@@ -21,7 +21,7 @@ agents:
       surrounding Threat Actors, Campaigns, Indicators of Compromise (IoCs), and Tactics, Techniques, and Procedures (TTPs). 
       With its advanced algorithms and natural language processing capabilities, the OSINT Analyst Agent can swiftly sift through the noise to identify relevant information.
     tools:
-      - GoogleSearchResults
+      - custom_tool.WebSearchTool
 
   osint_scraper_agent:
     name: "osint_scraper_agent"
