@@ -1,18 +1,15 @@
 from crewai_tools import BaseTool
 from neo4j import GraphDatabase
-# from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 import os
-import requests
 import pprint
+import requests
+from pydantic import PrivateAttr
 from bs4 import BeautifulSoup
-from typing import Any, Dict, List, Optional
 from langchain_community.graphs import Neo4jGraph
 from langchain_experimental.graph_transformers.diffbot import DiffbotGraphTransformer
-from langchain.tools import GoogleSerperAPIWrapper
-from langchain_core.tools import Tool
-from strike_crew.models import EmergingThreat, dataclasses
-
+from langchain_community.utilities.google_serper import GoogleSerperAPIWrapper
+from strike_crew.models import EmergingThreat
 
 load_dotenv()
 
@@ -22,9 +19,8 @@ user = os.getenv('NEO4J_USER')
 password = os.getenv('NEO4J_PASSWORD')
 nlp = os.getenv('DIFFBOT_NLP_API_TOKEN')
 custom_search = os.getenv('GOOGLE_API_KEY')
-api_key = os.getenv('GOOGLE_SERPER_API_KEY')
+api_key = os.getenv('SERPER_API_KEY')
 search_engine = os.getenv('GOOGLE_CSE_ID')
-
 
 diffbot_nlp = DiffbotGraphTransformer(nlp)
 
@@ -118,25 +114,18 @@ class Neo4JSearchTool(BaseTool):
 class WebSearchTool(BaseTool):
     name: str = "Web Search"
     description: str = "Searches the web for information based on user queries."
-
+    _search: GoogleSerperAPIWrapper = PrivateAttr()  # Use PrivateAttr to exclude from Pydantic validation
+    
     def __init__(self, api_key: str):
-        self.search = GoogleSerperAPIWrapper(api_key=api_key)
+        super().__init__()
+        self._search = GoogleSerperAPIWrapper(api_key=api_key)
 
     def _run(self, query: str) -> str:
         try:
-            results = self.search.run(query)
+            results = self._search.run(query)
             return results
         except Exception as e:
             return f"An error occurred: {str(e)}"
-
-if __name__ == "__main__":
-    # Replace with your actual Google Serper API key
-    api_key = api_key
-    web_search_tool = WebSearchTool(api_key=api_key)
-    query = "latest cybersecurity threats"
-    result = web_search_tool._run(query)
-    print(result)
-
 
 class WebScraperTool(BaseTool):
     name: str = "Web Scraper"
@@ -164,14 +153,14 @@ class DiffbotNLPTool(BaseTool):
         response = diffbot_nlp.nlp_request(content)
         entities = diffbot_nlp.process_response(response, content)
         return entities
-        # Placeholder implementation - replace with actual NLP processing logic
-        entities = {
-            "threat_actors": ["Actor1", "Actor2"],
-            "CVEs": ["CVE-2021-12345", "CVE-2021-67890"],
-            "TTPs": ["Phishing", "Malware"],
-            "IOCs": ["192.168.1.1", "example.com"]
-        }
-        return entities
+        # # Placeholder implementation - replace with actual NLP processing logic
+        # entities = {
+        #     "threat_actors": ["Actor1", "Actor2"],
+        #     "CVEs": ["CVE-2021-12345", "CVE-2021-67890"],
+        #     "TTPs": ["Phishing", "Malware"],
+        #     "IOCs": ["192.168.1.1", "example.com"]
+        # }
+        # return entities
 
 class DiffbotGraphUpdateTool(BaseTool):
     name: str = "Neo4J Update"
@@ -195,6 +184,5 @@ class DiffbotGraphUpdateTool(BaseTool):
             return "Neo4J database updated successfully."
         except Exception as e:
             return f"Failed to update Neo4J database: {str(e)}"
-
-    def close(self):
-        self._neo4j_db._driver.close()
+        def close(self):
+            self._neo4j_db._driver.close()
