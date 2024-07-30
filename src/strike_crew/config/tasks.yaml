@@ -1,40 +1,39 @@
+# tasks.yaml
+
 tasks:
   search_task:
-    name: "SearchTask"
-    description: > 
-      Search the web for information on cybersecurity threats based on user queries and provide a list of URLs.
-    expected_output: >
-      A list of URLs containing relevant information about cybersecurity threats.
-    inputs: 
-      - name: "query"
-    agent: "osint_analyst"
-  
-  gathering_task:
-    name: "GatheringTask"
-    description: >
-      Gather and scrape intelligence on cybersecurity threats from the provided URLs.
-    expected_output: >
-      Extracted information from the URLs, including Threat Actors, Campaigns, IoCs, and TTPs.
-    inputs:
-      - name: "urls"
-    agent: "osint_scraper_agent"
+    description: "Search for latest cybersecurity threats related to: {initial_query}"
+    expected_output: "A list of URLs and brief descriptions of recent cybersecurity threats"
+
+  scrape_task:
+    description: "Scrape detailed information from identified sources about: {initial_query}"
+    expected_output: "Extracted raw text and data from the provided URLs, focusing on threat details"
+
 
   validation_task:
-    name: "ValidationTask"
-    description: >
-      Verify the accuracy and relevance of the intelligence gathered by the OSINT agents.
-    expected_output: >
-      A list of verified intelligence data, cross-referenced with the Neo4J database.
-    inputs:
-      - name: "intelligence"
-    agent: "validation_agent"
+    description: "Validate and verify the gathered threat intelligence"
+    expected_output: "A list of verified threat intelligence data, with confidence scores"
+
+  analysis_task:
+    description: "Process and analyze the threat intelligence data"
+    expected_output: "Structured data identifying entities such as threat actors, TTPs, IOCs, and CVEs"
 
   graph_update_task:
-  - name: "GraphUpdateTask"
-    description: >
-      Update the Neo4J database with new knowledge graphs based on the verified intelligence data.
-    expected_output: >
-      Updated knowledge graphs in the Neo4J database representing relationships between Threat Actors, Campaigns, IoCs, TTPs, and CVEs.
-    inputs:
-      - name: "verified_intelligence"
-    agent: "KnowledgeGraphAgent"
+    description: "Update the knowledge graph with new threat intelligence"
+    expected_output: "Confirmation of new nodes and edges added to the Neo4j database, representing the latest threat intelligence"
+
+  summary_task:
+    description: "Generate a summary report of newly discovered threats"
+    expected_output: "A concise report summarizing new threats, their potential impact, and recommended actions"
+
+  connection_task:
+    description: "Identify potential connections between new and existing threats"
+    expected_output: "A list of possible relationships between newly discovered threats and those already in the knowledge graph"
+
+  json_output_task:
+    description: "Output verified threat intelligence as JSON for: {initial_query}"
+    expected_output: "A JSON file containing structured, verified threat intelligence data"
+
+  file_save_task:
+    description: "Save verified threat intelligence to a local file for: {initial_query}"
+    expected_output: "Confirmation that the threat intelligence has been saved to a specified local file"
