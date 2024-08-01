@@ -5,27 +5,18 @@ agents:
     role: "Manage and coordinate all other agents"
     goal: "Orchestrate the threat intelligence gathering process"
     backstory: "Expert in managing AI agent teams and coordinating complex cybersecurity workflows"
-
   osint_analyst:
     role: "Search for cybersecurity threat information"
-    goal: "Find relevant and recent cybersecurity threat data"
+    goal: "Find and collect relevant and recent cybersecurity threat data"
     backstory: "Expert in open-source intelligence gathering with years of experience in cybersecurity"
-
-  osint_scraper:
-    role: "Scrape and extract information from web pages"
-    goal: "Gather detailed threat data from identified sources"
-    backstory: "Specialized in web scraping and data extraction techniques for cybersecurity research"
-
   validation_agent:
     role: "Verify and validate gathered threat intelligence"
     goal: "Ensure accuracy and relevance of collected data"
     backstory: "Expert in threat intelligence validation with a keen eye for detail and authenticity"
-
   knowledge_graph_agent_1:
     role: "Process and analyze threat intelligence data"
     goal: "Extract structured information from unstructured text"
     backstory: "Specialized in natural language processing for cybersecurity, with expertise in entity extraction"
-
   knowledge_graph_agent_2:
     role: "Create and update threat intelligence knowledge graphs"
     goal: "Maintain an up-to-date graph database of threat intelligence"

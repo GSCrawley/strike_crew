@@ -1,3 +1,4 @@
+# Strike Crew - copyright (c) 2024 Gideon Shalom Crawley
 # main.py
 
 from strike_crew.config_loader import load_config
@@ -10,22 +11,14 @@ def main():
     agents_config = load_config(agents_config_path)
     tasks_config = load_config(tasks_config_path)
 
-    # Create the CrewConfig
     crew_config = CrewConfig(
         agents_config=agents_config, 
         tasks_config=tasks_config
         )
 
-    # Initialize the StrikeCrew
     strike_crew = StrikeCrew(crew_config)
 
     strike_crew.run()
-    # # Run the crew
-    # results = strike_crew.run("Latest cybersecurity threats")
-
-    # # Process and print results
-    # for result in results:
-    #     print(f"Emerging Threat: {result}")
 
 if __name__ == "__main__":
     main()

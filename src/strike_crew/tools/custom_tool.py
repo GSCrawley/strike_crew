@@ -144,7 +144,7 @@ class WebScraperTool(BaseTool):
                 results[url] = f"An error occurred while fetching the URL: {str(e)}"
         return results
 
-class DiffbotNLPTool(BaseTool):
+class NLPTool(BaseTool):
     name: str = "NLP Tool"
     description: str = "Processes text to extract threat intelligence entities."
 
@@ -162,7 +162,7 @@ class DiffbotNLPTool(BaseTool):
         # }
         # return entities
 
-class DiffbotGraphUpdateTool(BaseTool):
+class GraphUpdateTool(BaseTool):
     name: str = "Neo4J Update"
     description: str = "Updates Neo4J database with new knowledge graphs."
 

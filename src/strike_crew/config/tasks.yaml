@@ -9,7 +9,6 @@ tasks:
     description: "Scrape detailed information from identified sources about: {initial_query}"
     expected_output: "Extracted raw text and data from the provided URLs, focusing on threat details"
 
-
   validation_task:
     description: "Validate and verify the gathered threat intelligence"
     expected_output: "A list of verified threat intelligence data, with confidence scores"
