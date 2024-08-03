@@ -2351,6 +2351,21 @@ langchain-community = ">=0.2.6,<0.3.0"
 langchain-core = ">=0.2.10,<0.3.0"
 
 [[package]]
+name = "langchain-groq"
+version = "0.1.9"
+description = "An integration package connecting Groq and LangChain"
+optional = false
+python-versions = "<4.0,>=3.8.1"
+files = [
+    {file = "langchain_groq-0.1.9-py3-none-any.whl", hash = "sha256:632ba94bc05de2217f0dfd37be5892faa49eca6afdfe577926447024a96eef80"},
+    {file = "langchain_groq-0.1.9.tar.gz", hash = "sha256:0f28a4df00e8d58b024fd83dc338795baf439769d582de5cced48951aa00bbce"},
+]
+
+[package.dependencies]
+groq = ">=0.4.1,<1"
+langchain-core = ">=0.2.26,<0.3.0"
+
+[[package]]
 name = "langchain-openai"
 version = "0.1.19"
 description = "An integration package connecting OpenAI and LangChain"
@@ -5564,4 +5579,4 @@ test = ["big-O", "importlib-resources", "jaraco.functools", "jaraco.itertools", 
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<=3.13"
-content-hash = "dbdc75d852d055fb2752cf2c324224a2b59ad885e2ee18db15b8a569bdbe25a8"
+content-hash = "4761f1a6f01b3b352238c790a1a9eb39ec9e4de3c87f25f5d088bafa339d61bf"

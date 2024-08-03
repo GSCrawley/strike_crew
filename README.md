@@ -59,3 +59,8 @@ For support, questions, or feedback regarding the StrikeCrew Crew or crewAI.
 - [Chat with our docs](https://chatg.pt/DWjSBZn)
 
 Let's create wonders together with the power and simplicity of crewAI.
+
+
+# step 1 -  write a function to extract links and descriptions from the RSS feed. that gets fed to the manager agent, to give it more control of where to look. "use this and extract emerging threats" - be very specific about what constitutes the emerging threat we are looking for.    also prompt it to IGNORE EVERYTHING ELSE OTHER THAN THE EMERGING THREAT WE ARE LOOKING FOR.  
+# manager will look for the LATEST threats. 
+# Manager and OSINT agent should both be given exact definitions of emerging threats

@@ -1,7 +1,7 @@
 # models.py
 
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 class IOC(BaseModel):
@@ -55,3 +55,7 @@ class EmergingThreat(BaseModel):
     related_threats: List[str] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)
     references: List[str] = Field(default_factory=list)
+    nodes: List[Dict[str, Any]] = []
+    edges: List[Dict[str, Any]] = []
+    additional_info: Dict[str, Any] = {}
+
