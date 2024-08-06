@@ -11,12 +11,12 @@ def main():
     agents_config = load_config(agents_config_path)
     tasks_config = load_config(tasks_config_path)
 
-    crew_config = CrewConfig(
+    config = CrewConfig(
         agents_config=agents_config, 
         tasks_config=tasks_config
         )
 
-    strike_crew = StrikeCrew(crew_config)
+    strike_crew = StrikeCrew(config)
 
     strike_crew.run()
 

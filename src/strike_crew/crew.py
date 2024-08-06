@@ -1,6 +1,8 @@
 # Strike Crew - copyright (c) 2024 Gideon Shalom Crawley
 # crew.py
-
+import time
+import logging
+from functools import wraps
 import os
 import re
 import json
@@ -8,20 +10,32 @@ import uuid
 from py2neo import Graph, Node, Relationship
 from neo4j import GraphDatabase
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Dict, Any
 from pydantic import BaseModel
-from crewai import Agent, Crew, Process, Task 
+from crewai import Agent, Crew, Process, Task
 from langchain_groq import ChatGroq
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import SystemMessage, HumanMessage
+
 # from langchain_openai import ChatOpenAI
 from strike_crew.config import CrewConfig
 from strike_crew.models import EmergingThreat, IOC, TTP, ThreatActor, CVE, Campaign
 from strike_crew.tools.custom_tool import (
     Neo4JSearchTool, WebSearchTool, WebScraperTool, DiffbotNLPTool, DiffbotGraphUpdateTool
 )
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+class CustomGroqLLM(BaseChatModel):
+    def __init__(self, temperature: float = 0, model_name: str = "llama-3.1-8b-instant"):
+        self.chat_model = ChatGroq(temperature=temperature, model_name=model_name)
+
+    def __call__(self, messages: List[Any], **kwargs: Any) -> Any:
+        return self.chat_model.invoke(messages, **kwargs)
 
 class UserInput(BaseModel):
     threat_types: List[str]
@@ -37,8 +51,11 @@ class StrikeCrew:
         self.neo4j_user = os.getenv("NEO4J_USER")
         self.neo4j_password = os.getenv("NEO4J_PASSWORD")
         self.initialize_tools()
-        self.initialize_agents_and_tasks()
+        # self.initialize_agents_and_tasks()
         self.graph = Graph(self.neo4j_uri, auth=(self.neo4j_user, self.neo4j_password))
+        # self.groq_llm = ChatGroq(temperature=0, model_name="mixtral-8x7b-32768")
+        self.api_call_count = 0
+        self.last_api_call = 0
 
     def initialize_tools(self):
         self.web_search_tool = WebSearchTool(os.getenv("GOOGLE_SERPER_API_KEY"))
@@ -46,236 +63,175 @@ class StrikeCrew:
         self.neo4j_search_tool = Neo4JSearchTool(self.neo4j_uri, self.neo4j_user, self.neo4j_password)
         self.nlp_tool = DiffbotNLPTool()
         self.graph_update_tool = DiffbotGraphUpdateTool(self.neo4j_uri, self.neo4j_user, self.neo4j_password)
+        
 
-    def initialize_agents_and_tasks(self):
-    # Define the agents without specific tools or tasks
-        self.crew_manager = Agent(
-            role="Crew Manager",
-            goal="Orchestrate the threat intelligence gathering process",
-            backstory="Expert in managing AI agent teams and coordinating complex cybersecurity workflows",
-            verbose=True,
-            allow_delegation=True            
-        )
+    def groq_llm(self):
+        return CustomGroqLLM(temperature=0, model_name="mixtral-8x7b-32768")
 
-        self.osint_analyst = Agent(
+    def osint_analyst(self) -> Agent:
+        return Agent(
             role="OSINT Analyst",
             goal="Find relevant and recent cybersecurity threat data",
             backstory="Expert in open-source intelligence gathering",
             verbose=True,
-            allow_delegation=False
+            allow_delegation=False,
+            llm=self.groq_llm(),
+            tools=[self.web_search_tool, self.web_scraper_tool, self.neo4j_search_tool, self.nlp_tool]
         )
 
-        self.validation_agent = Agent(
+    def validation_agent(self) -> Agent:
+        return Agent(
             role="Validation Agent",
             goal="Verify and validate gathered threat intelligence, ensuring accuracy and relevance of collected data",
             backstory="Expert in threat intelligence validation techniques",
             verbose=True,
-            allow_delegation=False
+            allow_delegation=False,
+            llm=self.groq_llm(),
+            tools=[self.neo4j_search_tool, self.nlp_tool]
         )
 
-        self.knowledge_graph_agent_1 = Agent(
-            role="Knowledge Graph Agent 1",
-            goal="Extract structured information from unstructured text",
-            backstory="Specialized in natural language processing for cybersecurity",
+    def knowledge_graph_agent(self) -> Agent:
+        return Agent(
+            role="Knowledge Graph Agent",
+            goal="Extract structured information and update threat intelligence graphs",
+            backstory="Specialized in natural language processing and graph databases for cybersecurity",
             verbose=True,
-            allow_delegation=False
+            allow_delegation=False,
+            llm=self.groq_llm(),
+            tools=[self.neo4j_search_tool, self.graph_update_tool]
         )
 
-        self.knowledge_graph_agent_2 = Agent(
-            role="Knowledge Graph Agent 2",
-            goal="Maintain an up-to-date graph database of threat intelligence",
-            backstory="Expert in graph databases and threat intelligence structuring",
-            verbose=True,
-            allow_delegation=False
+    def search_task(self, initial_query: str, sources: List[str]) -> Task:
+        return Task(
+            description=f"Search for latest cybersecurity threats related to: {initial_query}. "
+                        f"Only use the following sources: {', '.join(sources)}",
+            agent=self.osint_analyst()
         )
 
-        self.agents = [
-            self.osint_analyst,
-            self.validation_agent,
-            self.knowledge_graph_agent_1,
-            self.knowledge_graph_agent_2
-        ]
 
-        print("Available agents:")
-        for agent in self.agents:
-            print(f"- {agent.role}")
-
-        # Define tasks without assigning them to specific agents
-        self.tasks = [
-            Task(
-                description="Search for latest cybersecurity threats related to: {initial_query}",
-                expected_output="A list of URLs and brief descriptions of recent cybersecurity threats"
-            ),
-            Task(
-                description="Validate and verify the gathered threat intelligence",
-                expected_output="A list of verified threat intelligence data, with confidence scores"
-            ),
-            Task(
-                description="Process and analyze the threat intelligence data",
-                expected_output="Structured data identifying entities such as threat actors, TTPs, IOCs, and CVEs"
-            ),
-            Task(
-                description="Update the knowledge graph with new threat intelligence",
-                expected_output="Confirmation of new nodes and edges added to the Neo4j database, representing the latest threat intelligence"
-            ),
-            Task(
-                description="Generate a summary report of newly discovered threats",
-                expected_output="A concise report summarizing new threats, their potential impact, and recommended actions"
-            )
-        ]
-
-        print("\nDefined tasks:")
-        for task in self.tasks:
-            print(f"- {task.description}")
-
-        # Create the crew
-        self.crew = Crew(
-            agents=self.agents,
-            tasks=self.tasks,
-            manager=self.crew_manager,
-            process=Process.hierarchical,
-            manager_llm=ChatOpenAI(model="gpt-4"),
-            # manager_llm=ChatGroq(temperature=0, model_name="llama3-70b-8192"),  
-            verbose=True
+    def validation_task(self) -> Task:
+        return Task(
+            description="Validate and verify the gathered threat intelligence. Ensure all information aligns with the EmergingThreat schema.",
+            agent=self.validation_agent()
         )
-
-        Crew.tools = [
-            self.web_search_tool,
-            self.web_scraper_tool,
-            self.neo4j_search_tool,
-            self.nlp_tool,
-            self.graph_update_tool
-        ]
     
-        print("\nCrew initialized!")
+    def knowledge_graph_task(self) -> Task:
+        return Task(
+            description="Parse the validated threat information into Entities, Attributes, and Relationships. "
+                        "Create a Neo4j knowledge graph using this structured data. "
+                        "Ensure all fields in the EmergingThreat schema are populated.",
+            agent=self.knowledge_graph_agent()
+        )
 
+
+    def rate_limit(max_per_minute):
+        min_interval = 60.0 / max_per_minute
+        def decorator(func):
+            last_called = [0.0]
+            @wraps(func)
+            def wrapper(self, *args, **kwargs):
+                elapsed = time.time() - last_called[0]
+                left_to_wait = min_interval - elapsed
+                if left_to_wait > 0:
+                    time.sleep(left_to_wait)
+                ret = func(self, *args, **kwargs)
+                last_called[0] = time.time()
+                return ret
+            return wrapper
+        return decorator
+
+    # Then apply it to methods that make API calls, e.g.:
+    @rate_limit(max_per_minute=10)
     def run(self):
         while True:
             user_input = self._get_user_input()
             initial_query = self._generate_initial_query(user_input)
-        
-            print(f"Generated query: {initial_query}")
-        
-            emerging_threats = self._create_emerging_threat(initial_query, user_input)
-        
-            print(f"Number of emerging threats: {len(emerging_threats)}")
-        
-            if emerging_threats:
-                self._save_json_output(emerging_threats)
-                self._save_to_file(emerging_threats)
-                graph_id = self._update_neo4j_database(emerging_threats)                                                                                                                                 
             
+            print(f"Generated query: {initial_query}")
+            
+            crew = Crew(
+                agents=[self.osint_analyst(), self.validation_agent(), self.knowledge_graph_agent()],
+                tasks=[
+                    self.search_task(initial_query, user_input.sources),
+                    self.validation_task(),
+                    self.knowledge_graph_task()
+                ],
+                process=Process.sequential,
+                verbose=True
+            )
+
+            result = crew.kickoff()
+            processed_results = self._process_results(result)
+            
+            if processed_results:
+                self._save_json_output(processed_results)
+                self._save_to_file(processed_results)
+                graph_id = self._update_neo4j_database(processed_results)
+                
                 print(f"New knowledge graph created with ID: {graph_id}")
                 print("To view the new knowledge graph, run the following Cypher query in Neo4j Browser:")
-                print(f"MATCH (t:EmergingThreat {{graph_id: '{graph_id}'}}) RETURN t")
+                print(f"MATCH (n {{graph_id: '{graph_id}'}}) RETURN n")
             else:
                 print("No emerging threats were identified in this iteration.")
-        
+            
             if not self._should_continue():
                 break
-    
-    def _create_emerging_threat(self, initial_query: str, user_input: UserInput) -> List[EmergingThreat]:
-        raw_results = self.crew.kickoff({"initial_query": initial_query, "user_input": user_input.dict()})
-        print(f"Raw results: {raw_results}")  # Debug print
-        
-        processed_results = self._process_results(raw_results)
-        
-        if processed_results:
-            return processed_results
-        else:
-            # Create a default EmergingThreat if no results were processed
-            return [EmergingThreat(
-                name=f"Unknown Threat - {datetime.now()}",
-                description=f"No specific threat identified for query: {initial_query}",
-                threat_type="Unknown",
-                iocs=IOC(),
-                ttps=TTP(),
-                threat_actors=[],
-                cves=[],
-                campaigns=[],
-                targeted_sectors=[],
-                targeted_countries=[],
-                first_seen=datetime.now(),
-                last_seen=datetime.now(),
-                confidence_score=0.0,
-                data_sources=[],
-                mitigation_recommendations=[],
-                related_threats=[],
-                tags=[],
-                references=[]
-            )]
 
+    def _get_user_input(self) -> UserInput:
+        threat_types = input("Enter specific types of threats you're interested in (comma-separated, or press Enter for all): ").split(',')
+        threat_types = [t.strip() for t in threat_types if t.strip()]
+        
+        sources = input("Enter specific sources you'd like searched (comma-separated): ").split(',')
+        sources = [s.strip() for s in sources if s.strip()]
+        
+        return UserInput(threat_types=threat_types, sources=sources)
+
+    def _generate_initial_query(self, user_input: UserInput) -> str:
+        query_parts = ["Latest cybersecurity threats"]
+        
+        if user_input.threat_types:
+            query_parts.append(f"related to {', '.join(user_input.threat_types)}")
+        
+        return " ".join(query_parts)
+        
     def _process_results(self, raw_results: str) -> List[EmergingThreat]:
         processed_results = []
         
-        # Extract the threat name and basic information
-        threat_match = re.search(r'\*\*(.*?)\s*Comprehensive Report\*\*(.*?)(?=\n\n)', raw_results, re.DOTALL)
-        if threat_match:
-            threat_name = threat_match.group(1).strip()
-            threat_description = threat_match.group(2).strip()
+        # Assuming the knowledge graph agent returns a JSON string
+        try:
+            threat_data = json.loads(raw_results)
+        except json.JSONDecodeError:
+            print("Error: Unable to parse the results as JSON.")
+            return []
 
-            # Extract nodes and edges
-            nodes = []
-            edges = []
-
-            # Extract nodes
-            node_matches = re.findall(r'(\d+)\.\s*(.*?)\n((?:\s*-.*\n)*)', raw_results, re.DOTALL)
-            for match in node_matches:
-                node_name = match[1].strip()
-                node_properties = dict(re.findall(r'-\s*(.*?):\s*(.*)', match[2]))
-                nodes.append({"name": node_name, "properties": node_properties})
-
-            # Extract edges
-            edge_matches = re.findall(r'\((.*?)\)\s*-\[(.*?)\]->\s*\((.*?)\)', raw_results)
-            for match in edge_matches:
-                edges.append({"from": match[0], "relation": match[1], "to": match[2]})
-
+        for threat in threat_data:
             emerging_threat = EmergingThreat(
-                name=threat_name,
-                description=threat_description,
-                threat_type=nodes[0]["properties"].get("Type", "Unknown") if nodes else "Unknown",
-                iocs=IOC(),  # You might want to extract this from the data if available
-                ttps=TTP(),  # You might want to extract this from the data if available
-                threat_actors=[],  # You might want to extract this from the data if available
-                cves=[],  # You might want to extract this from the data if available
-                campaigns=[],  # You might want to extract this from the data if available
-                targeted_sectors=[],  # You might want to extract this from the data if available
-                targeted_countries=[],  # You might want to extract this from the data if available
-                first_seen=datetime.now(),  # You might want to extract this from the data if available
-                last_seen=datetime.now(),
-                confidence_score=1.0,
-                data_sources=[],  # You might want to extract this from the data if available
-                mitigation_recommendations=[],  # You might want to extract this from the data if available
-                related_threats=[],  # You might want to extract this from the data if available
-                tags=[nodes[0]["properties"].get("Category", "Unknown")] if nodes else [],
-                references=[],  # You might want to extract this from the data if available
-                nodes=nodes,
-                edges=edges,
-                additional_info={}  # You can add any additional information here
+                name=threat.get('name', 'Unknown Threat'),
+                description=threat.get('description', ''),
+                threat_type=threat.get('threat_type', 'Unknown'),
+                iocs=IOC(**threat.get('iocs', {})),
+                ttps=TTP(**threat.get('ttps', {})),
+                threat_actors=[ThreatActor(**actor) for actor in threat.get('threat_actors', [])],
+                cves=[CVE(**cve) for cve in threat.get('cves', [])],
+                campaigns=[Campaign(**campaign) for campaign in threat.get('campaigns', [])],
+                targeted_sectors=threat.get('targeted_sectors', []),
+                targeted_countries=threat.get('targeted_countries', []),
+                first_seen=datetime.fromisoformat(threat['first_seen']) if threat.get('first_seen') else None,
+                last_seen=datetime.fromisoformat(threat['last_seen']) if threat.get('last_seen') else None,
+                confidence_score=threat.get('confidence_score', 0.0),
+                data_sources=threat.get('data_sources', []),
+                mitigation_recommendations=threat.get('mitigation_recommendations', []),
+                related_threats=threat.get('related_threats', []),
+                tags=threat.get('tags', []),
+                references=threat.get('references', []),
+                nodes=threat.get('nodes', []),
+                edges=threat.get('edges', []),
+                additional_info=threat.get('additional_info', {})
             )
             processed_results.append(emerging_threat)
         
         return processed_results
 
-    def _get_user_input(self) -> UserInput:
-            threat_types = input("Enter specific types of threats you're interested in (comma-separated, or press Enter for all): ").split(',')
-            threat_types = [t.strip() for t in threat_types if t.strip()]
-            
-            sources = input("Enter specific sources you'd like searched (comma-separated, or press Enter for all): ").split(',')
-            sources = [s.strip() for s in sources if s.strip()]
-            
-            return UserInput(threat_types=threat_types, sources=sources)
-
-    def _generate_initial_query(self, user_input: UserInput) -> str:
-            query_parts = ["Latest cybersecurity threats"]
-            
-            if user_input.threat_types:
-                query_parts.append(f"related to {', '.join(user_input.threat_types)}")
-            
-            if user_input.sources:
-                query_parts.append(f"from {', '.join(user_input.sources)}")
-            
-            return " ".join(query_parts)
 
     def _save_json_output(self, results: List[EmergingThreat]):
         json_data = [result.dict() for result in results]
@@ -304,70 +260,112 @@ class StrikeCrew:
                 f.write("\n")
         print(f"Threat intelligence report saved to {filename}")
 
-    def _update_neo4j_database(self, results: List[EmergingThreat]) -> str:
-            graph_id = str(uuid.uuid4())
-            try:
-                with GraphDatabase.driver(self.neo4j_uri, auth=(self.neo4j_user, self.neo4j_password)) as driver:
-                    with driver.session() as session:
-                        for threat in results:
-                            session.write_transaction(self._create_threat_node, threat, graph_id)
-                        
-                        # Verify that nodes were created
-                        verification_query = (
-                            "MATCH (t:EmergingThreat {graph_id: $graph_id}) "
-                            "RETURN count(t) as count"
-                        )
-                        result = session.run(verification_query, graph_id=graph_id).single()
-                        if result and result["count"] > 0:
-                            print(f"Successfully added {result['count']} nodes to Neo4j with graph_id: {graph_id}")
-                        else:
-                            print(f"Warning: No nodes were found with graph_id: {graph_id}")
-                
-                print("Neo4j database updated with new threat intelligence")
-            except Exception as e:
-                print(f"Error updating Neo4j database: {e}")
-            return graph_id
+    # def _update_neo4j_database(self, results: List[EmergingThreat]) -> str:
+    #     graph_id = str(uuid.uuid4())
+    #     try:
+    #         with GraphDatabase.driver(self.neo4j_uri, auth=(self.neo4j_user, self.neo4j_password)) as driver:
+    #             with driver.session() as session:
+    #                 for threat in results:
+    #                     session.write_transaction(self._create_threat_node, threat, graph_id)
+                    
+    #                 # Verify that nodes were created
+    #                 verification_query = (
+    #                     "MATCH (t:EmergingThreat {graph_id: $graph_id}) "
+    #                     "RETURN count(t) as count"
+    #                 )
+    #                 result = session.run(verification_query, graph_id=graph_id).single()
+    #                 if result and result["count"] > 0:
+    #                     print(f"Successfully added {result['count']} EmergingThreat nodes to Neo4j with graph_id: {graph_id}")
+    #                 else:
+    #                     print(f"Warning: No EmergingThreat nodes were found with graph_id: {graph_id}")
+            
+    #         print("Neo4j database updated with new threat intelligence")
+    #     except Exception as e:
+    #         print(f"Error updating Neo4j database: {e}")
+    #     return graph_id
 
     @staticmethod
     def _create_threat_node(tx, threat: EmergingThreat, graph_id: str):
-        # Create the main threat node
+        # Create the main EmergingThreat node
         main_node_query = (
-            "CREATE (t:EmergingThreat {name: $name, type: $type, category: $category, "
-            "first_discovered: $first_discovered, affected_systems: $affected_systems, "
-            "graph_id: $graph_id})"
+            "CREATE (t:EmergingThreat {name: $name, description: $description, threat_type: $threat_type, "
+            "first_seen: $first_seen, last_seen: $last_seen, confidence_score: $confidence_score, graph_id: $graph_id})"
         )
         tx.run(main_node_query, 
             name=threat.name,
-            type=threat.threat_type,
-            category=threat.tags[0] if threat.tags else 'Unknown',
-            first_discovered=threat.first_seen.year,
-            affected_systems=threat.additional_info['properties'].get('Affected Systems', '').split(', '),
-            graph_id=graph_id)
+            description=threat.description,
+            threat_type=threat.threat_type,
+            first_seen=threat.first_seen,
+            last_seen=threat.last_seen,
+            confidence_score=threat.confidence_score,
+            graph_id=graph_id
+        )
 
-        # Create other nodes and relationships
-        for node in threat.additional_info['related_nodes']:
-            node_query = (
-                f"CREATE (n:{node['properties']['Type']} {{name: $name, "
-                f"type: $type, graph_id: $graph_id}})"
+        # Create IOC nodes
+        for ioc_type, iocs in threat.iocs.dict().items():
+            for ioc in iocs:
+                tx.run(
+                    "MATCH (t:EmergingThreat {graph_id: $graph_id}) "
+                    "CREATE (i:IOC {type: $type, value: $value, graph_id: $graph_id}) "
+                    "CREATE (t)-[:HAS_IOC]->(i)",
+                    graph_id=graph_id, type=ioc_type, value=ioc
+                )
+
+        # Create TTP nodes
+        for ttp_type, ttps in threat.ttps.dict().items():
+            for ttp in ttps:
+                tx.run(
+                    "MATCH (t:EmergingThreat {graph_id: $graph_id}) "
+                    "CREATE (p:TTP {type: $type, value: $value, graph_id: $graph_id}) "
+                    "CREATE (t)-[:USES_TTP]->(p)",
+                    graph_id=graph_id, type=ttp_type, value=ttp
+                )
+
+        # Create ThreatActor nodes
+        for actor in threat.threat_actors:
+            tx.run(
+                "MATCH (t:EmergingThreat {graph_id: $graph_id}) "
+                "CREATE (a:ThreatActor {name: $name, description: $description, motivation: $motivation, country: $country, graph_id: $graph_id}) "
+                "CREATE (a)-[:ASSOCIATED_WITH]->(t)",
+                graph_id=graph_id, **actor.dict()
             )
-            tx.run(node_query, 
-                name=node['name'],
-                type=node['properties']['Type'],
-                graph_id=graph_id)
 
-        # Create edges
-        for edge in threat.additional_info['edges']:
-            edge_query = (
-                "MATCH (a {name: $from, graph_id: $graph_id}), "
-                "(b {name: $to, graph_id: $graph_id}) "
-                "CREATE (a)-[r:$relation]->(b)"
+        # Create CVE nodes
+        for cve in threat.cves:
+            tx.run(
+                "MATCH (t:EmergingThreat {graph_id: $graph_id}) "
+                "CREATE (c:CVE {id: $id, description: $description, severity: $severity, published_date: $published_date, graph_id: $graph_id}) "
+                "CREATE (t)-[:EXPLOITS]->(c)",
+                graph_id=graph_id, **cve.dict()
             )
-            tx.run(edge_query,
-                from_=edge[0],
-                relation=edge[1],
-                to=edge[2],
-                graph_id=graph_id)
 
+        # Create Campaign nodes
+        for campaign in threat.campaigns:
+            tx.run(
+                "MATCH (t:EmergingThreat {graph_id: $graph_id}) "
+                "CREATE (c:Campaign {name: $name, description: $description, start_date: $start_date, end_date: $end_date, graph_id: $graph_id}) "
+                "CREATE (t)-[:PART_OF]->(c)",
+                graph_id=graph_id, **campaign.dict()
+            )
+
+        # Create additional nodes and edges as defined by the knowledge graph agent
+        for node in threat.nodes:
+            tx.run(
+                f"CREATE (n:{node['label']} $properties)",
+                properties={**node['properties'], 'graph_id': graph_id}
+            )
+
+        for edge in threat.edges:
+            tx.run(
+                "MATCH (s {name: $source, graph_id: $graph_id}) "
+                "MATCH (t {name: $target, graph_id: $graph_id}) "
+                "CREATE (s)-[r:$type $properties]->(t)",
+                source=edge['source'],
+                target=edge['target'],
+                type=edge['type'],
+                properties=edge.get('properties', {}),
+                graph_id=graph_id
+            )
 
     def _should_continue(self) -> bool:
             response = input("Would you like to search for another emerging threat? (y/n): ").lower()
@@ -375,29 +373,5 @@ class StrikeCrew:
 
 
 if __name__ == "__main__":
-    config = CrewConfig(
-        agents_config={
-            "agents": {
-                "crew_manager": {
-                    "role": "Manage and coordinate all other agents",
-                    "goal": "Orchestrate the threat intelligence gathering process",
-                    "backstory": "Expert in managing AI agent teams and coordinating complex cybersecurity workflows"
-                }
-            }
-        },
-        tasks_config={
-            "tasks": {
-                "search_task": {
-                    "description": "Search for latest cybersecurity threats",
-                },
-                "validation_task": {
-                    "description": "Validate and verify the gathered threat intelligence",
-                },
-                "graph_update_task": {
-                    "description": "Update the knowledge graph with new threat intelligence",
-                }
-            }
-        }
-    )
     strike_crew = StrikeCrew(config)
     strike_crew.run()
