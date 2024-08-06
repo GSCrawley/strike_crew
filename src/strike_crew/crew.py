@@ -17,7 +17,7 @@ from langchain_groq import ChatGroq
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import ChatResult, ChatGeneration
-
+from strike_crew.llm import CustomGroqLLM 
 # from langchain_openai import ChatOpenAI
 from strike_crew.config import CrewConfig
 from strike_crew.models import EmergingThreat, IOC, TTP, ThreatActor, CVE, Campaign
@@ -30,26 +30,6 @@ logger = logging.getLogger(__name__)
 from dotenv import load_dotenv
 
 load_dotenv()
-
-class CombinedMeta(type(BaseChatModel), type(BaseModel)):
-    pass
-
-class CustomGroqLLM(BaseChatModel, BaseModel,  metaclass=CombinedMeta):
-    chat_model: ChatGroq = Field(default_factory=lambda: ChatGroq(temperature=0, model_name="mixtral-8x7b-32768"))
-    
-    class Config:
-        arbitrary_types_allowed = True
-
-    def _generate(self, messages: List[BaseMessage], stop: Optional[List[str]] = None, run_manager: Optional[Any] = None, **kwargs: Any) -> ChatResult:
-        response = self.chat_model.invoke(messages, stop=stop, **kwargs)
-        return ChatResult(generations=[ChatGeneration(message=response)])
-
-    def _llm_type(self) -> str:
-        return "custom_groq_llm"
-
-    @property
-    def _identifying_params(self) -> Mapping[str, Any]:
-        return {"model_name": self.chat_model.model_name, "temperature": self.chat_model.temperature}
 
 class UserInput(BaseModel):
     threat_types: List[str]
@@ -119,24 +99,26 @@ class StrikeCrew:
         return Task(
             description=f"Search for latest cybersecurity threats related to: {initial_query}. "
                         f"Only use the following sources: {', '.join(sources)}",
+            expected_output="A comprehensive list of recent cybersecurity threats related to the query, "
+                            "including threat names, descriptions, IOCs, and other relevant details.",
             agent=self.osint_analyst()
         )
-
 
     def validation_task(self) -> Task:
         return Task(
             description="Validate and verify the gathered threat intelligence. Ensure all information aligns with the EmergingThreat schema.",
+            expected_output="A validated list of threat intelligence data, with confidence scores and any discrepancies noted.",
             agent=self.validation_agent()
         )
-    
+
     def knowledge_graph_task(self) -> Task:
         return Task(
             description="Parse the validated threat information into Entities, Attributes, and Relationships. "
                         "Create a Neo4j knowledge graph using this structured data. "
                         "Ensure all fields in the EmergingThreat schema are populated.",
+            expected_output="A confirmation of the created Neo4j knowledge graph, including the graph ID and a summary of nodes and relationships created.",
             agent=self.knowledge_graph_agent()
         )
-
 
     def rate_limit(max_per_minute):
         min_interval = 60.0 / max_per_minute
