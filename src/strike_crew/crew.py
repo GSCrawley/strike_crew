@@ -10,12 +10,13 @@ import uuid
 from py2neo import Graph, Node, Relationship
 from neo4j import GraphDatabase
 from datetime import datetime
-from typing import List, Dict, Any
-from pydantic import BaseModel
+from typing import List, Dict, Any, Optional, Mapping, Type
+from pydantic import BaseModel, Field
 from crewai import Agent, Crew, Process, Task
 from langchain_groq import ChatGroq
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import BaseMessage
+from langchain_core.outputs import ChatResult, ChatGeneration
 
 # from langchain_openai import ChatOpenAI
 from strike_crew.config import CrewConfig
@@ -30,12 +31,25 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-class CustomGroqLLM(BaseChatModel):
-    def __init__(self, temperature: float = 0, model_name: str = "llama-3.1-8b-instant"):
-        self.chat_model = ChatGroq(temperature=temperature, model_name=model_name)
+class CombinedMeta(type(BaseChatModel), type(BaseModel)):
+    pass
 
-    def __call__(self, messages: List[Any], **kwargs: Any) -> Any:
-        return self.chat_model.invoke(messages, **kwargs)
+class CustomGroqLLM(BaseChatModel, BaseModel,  metaclass=CombinedMeta):
+    chat_model: ChatGroq = Field(default_factory=lambda: ChatGroq(temperature=0, model_name="mixtral-8x7b-32768"))
+    
+    class Config:
+        arbitrary_types_allowed = True
+
+    def _generate(self, messages: List[BaseMessage], stop: Optional[List[str]] = None, run_manager: Optional[Any] = None, **kwargs: Any) -> ChatResult:
+        response = self.chat_model.invoke(messages, stop=stop, **kwargs)
+        return ChatResult(generations=[ChatGeneration(message=response)])
+
+    def _llm_type(self) -> str:
+        return "custom_groq_llm"
+
+    @property
+    def _identifying_params(self) -> Mapping[str, Any]:
+        return {"model_name": self.chat_model.model_name, "temperature": self.chat_model.temperature}
 
 class UserInput(BaseModel):
     threat_types: List[str]
@@ -66,7 +80,7 @@ class StrikeCrew:
         
 
     def groq_llm(self):
-        return CustomGroqLLM(temperature=0, model_name="mixtral-8x7b-32768")
+        return CustomGroqLLM()
 
     def osint_analyst(self) -> Agent:
         return Agent(
@@ -193,7 +207,7 @@ class StrikeCrew:
             query_parts.append(f"related to {', '.join(user_input.threat_types)}")
         
         return " ".join(query_parts)
-        
+
     def _process_results(self, raw_results: str) -> List[EmergingThreat]:
         processed_results = []
         
