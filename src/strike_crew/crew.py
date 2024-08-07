@@ -10,19 +10,19 @@ import uuid
 from py2neo import Graph, Node, Relationship
 from neo4j import GraphDatabase
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Mapping, Type
+from typing import List, Dict, Any, Optional, Mapping, Type, Callable
 from pydantic import BaseModel, Field
 from crewai import Agent, Crew, Process, Task
 from langchain_groq import ChatGroq
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import ChatResult, ChatGeneration
-from strike_crew.llm import CustomGroqLLM 
+from strike_crew.llm import CustomGroqLLM
 # from langchain_openai import ChatOpenAI
 from strike_crew.config import CrewConfig
 from strike_crew.models import EmergingThreat, IOC, TTP, ThreatActor, CVE, Campaign
 from strike_crew.tools.custom_tool import (
-    Neo4JSearchTool, WebSearchTool, WebScraperTool, DiffbotNLPTool, DiffbotGraphUpdateTool
+    WebSearchTool, WebScraperTool, DiffbotNLPTool, DiffbotGraphUpdateTool
 )
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -38,6 +38,7 @@ class UserInput(BaseModel):
 class StrikeCrew:
     def __init__(self, config: CrewConfig):
         self.config = config
+        self.llm = CustomGroqLLM(config.get_llm_config())
         # self.agents = []
         # self.tasks = []
         # self.crew = None
@@ -54,13 +55,12 @@ class StrikeCrew:
     def initialize_tools(self):
         self.web_search_tool = WebSearchTool(os.getenv("GOOGLE_SERPER_API_KEY"))
         self.web_scraper_tool = WebScraperTool()
-        self.neo4j_search_tool = Neo4JSearchTool(self.neo4j_uri, self.neo4j_user, self.neo4j_password)
+        # self.neo4j_search_tool = Neo4JSearchTool(self.neo4j_uri, self.neo4j_user, self.neo4j_password)
         self.nlp_tool = DiffbotNLPTool()
         self.graph_update_tool = DiffbotGraphUpdateTool(self.neo4j_uri, self.neo4j_user, self.neo4j_password)
         
-
-    def groq_llm(self):
-        return CustomGroqLLM()
+    # def groq_llm(self):
+    #     return CustomGroqLLM()
 
     def osint_analyst(self) -> Agent:
         return Agent(
@@ -69,8 +69,8 @@ class StrikeCrew:
             backstory="Expert in open-source intelligence gathering",
             verbose=True,
             allow_delegation=False,
-            llm=self.groq_llm(),
-            tools=[self.web_search_tool, self.web_scraper_tool, self.neo4j_search_tool, self.nlp_tool]
+            llm=self.llm,
+            tools=[self.web_search_tool, self.web_scraper_tool, self.nlp_tool]
         )
 
     def validation_agent(self) -> Agent:
@@ -80,8 +80,8 @@ class StrikeCrew:
             backstory="Expert in threat intelligence validation techniques",
             verbose=True,
             allow_delegation=False,
-            llm=self.groq_llm(),
-            tools=[self.neo4j_search_tool, self.nlp_tool]
+            llm=self.llm,
+            tools=[self.web_search_tool, self.nlp_tool]
         )
 
     def knowledge_graph_agent(self) -> Agent:
@@ -91,8 +91,8 @@ class StrikeCrew:
             backstory="Specialized in natural language processing and graph databases for cybersecurity",
             verbose=True,
             allow_delegation=False,
-            llm=self.groq_llm(),
-            tools=[self.neo4j_search_tool, self.graph_update_tool]
+            llm=self.llm,
+            tools=[self.web_search_tool, self.graph_update_tool]
         )
 
     def search_task(self, initial_query: str, sources: List[str]) -> Task:
@@ -107,7 +107,7 @@ class StrikeCrew:
     def validation_task(self) -> Task:
         return Task(
             description="Validate and verify the gathered threat intelligence. Ensure all information aligns with the EmergingThreat schema.",
-            expected_output="A validated list of threat intelligence data, with confidence scores and any discrepancies noted.",
+            expected_output="A validated list of threat intelligence data in str format, with confidence scores and any discrepancies noted.",
             agent=self.validation_agent()
         )
 

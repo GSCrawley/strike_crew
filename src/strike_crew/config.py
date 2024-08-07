@@ -1,11 +1,17 @@
 # config.py
 import yaml
 from typing import Dict, Any, List
+from pydantic import BaseModel
+
+class GroqLLMConfig(BaseModel):
+    temperature: float = 0
+    model_name: str = "mixtral-8x7b-32768"
 
 class CrewConfig:
-    def __init__(self, agents_config: Dict[str, Any], tasks_config: Dict[str, Any]):
+    def __init__(self, agents_config: Dict[str, Any], tasks_config: Dict[str, Any], llm_config: Dict[str, Any] = None):
         self.agents_config = self._validate_agents_config(agents_config)
         self.tasks_config = self._validate_tasks_config(tasks_config)
+        self.llm_config = self._validate_llm_config(llm_config)
 
     def _validate_agents_config(self, agents_config: Dict[str, Any]) -> Dict[str, Any]:
         if 'agents' not in agents_config:
@@ -41,4 +47,11 @@ class CrewConfig:
 
         return tasks_config
 
-    # ... (rest of the methods remain the same)
+    def _validate_llm_config(self, llm_config: Dict[str, Any] = None) -> GroqLLMConfig:
+        if llm_config is None:
+            llm_config = {}
+        return GroqLLMConfig(**llm_config)
+
+    def get_llm_config(self) -> GroqLLMConfig:
+        return self.llm_config
+

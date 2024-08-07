@@ -1,10 +1,17 @@
-from crewai_tools import BaseTool
+from crewai_tools import BaseTool, Tool
 from neo4j import GraphDatabase
 from dotenv import load_dotenv
+import scrapy
+from scrapy.crawler import CrawlerProcess
+from typing import List, Dict
 import os
+import json 
+import re
+from datetime import datetime
 import pprint
 import requests
-from pydantic import PrivateAttr
+from urllib.parse import urlparse
+from pydantic import PrivateAttr, BaseModel
 from bs4 import BeautifulSoup
 from langchain_community.graphs import Neo4jGraph
 from langchain_experimental.graph_transformers.diffbot import DiffbotGraphTransformer
@@ -73,7 +80,7 @@ class Neo4jDatabase:
 
         schema = self.schema_text(node_props, rel_props, rels)
         self.schema = schema
-        print(schema)
+        # print(schema)
 
     def schema_text(self, node_props, rel_props, rels):
         schema = "Node Properties: \n"
@@ -86,30 +93,6 @@ class Neo4jDatabase:
         for rel in rels:
             schema += f"{rel}\n"
         return schema
-    
-class Neo4JSearchTool(BaseTool):
-    name: str = "Neo4J Search"
-    description: str = "A tool to query Neo4j database using APOC procedures."
-    def __init__(self, uri, user, password):
-        super().__init__()
-        self._neo4j_db = Neo4jDatabase(host=uri, user=user, password=password)
-        # Raise an error if the APOC plugin is not available
-        try:
-            self._neo4j_db.query("CALL apoc.help('apoc')")
-        except Exception as e:
-            raise ValueError("Missing APOC Core plugin") from e
-
-    def _run(self, query: str) -> str:
-        try:
-            result = self._neo4j_db.query(query)
-            return str(result)
-        except Exception as e:
-            return f"Query failed: {e}"
-
-    def __del__(self):
-        if hasattr(self, '_neo4j_db'):
-            self._neo4j_db.close()
-
 
 class WebSearchTool(BaseTool):
     name: str = "Web Search"
@@ -127,26 +110,113 @@ class WebSearchTool(BaseTool):
         except Exception as e:
             return f"An error occurred: {str(e)}"
 
-class WebScraperTool(BaseTool):
-    name: str = "Web Scraper"
-    description: str = "Scrapes content from a list of URLs."
+class ScrapedThreatInfo(BaseModel):
+    name: str = ""
+    description: str = ""
+    threat_type: str = ""
+    iocs: Dict[str, List[str]] = {
+        "ip_addresses": [], "domains": [], "urls": [], 
+        "file_hashes": [], "email_addresses": []
+    }
+    ttps: Dict[str, List[str]] = {
+        "tactics": [], "techniques": [], "sub_techniques": [], "procedures": []
+    }
+    threat_actors: List[Dict[str, str]] = []
+    cves: List[Dict[str, str]] = []
+    campaigns: List[Dict[str, str]] = []
+    targeted_sectors: List[str] = []
+    targeted_countries: List[str] = []
+    first_seen: str = ""
+    last_seen: str = ""
+    confidence_score: float = 0.0
+    data_sources: List[str] = []
+    mitigation_recommendations: List[str] = []
+    related_threats: List[str] = []
+    tags: List[str] = []
+    references: List[str] = []
 
-    def _run(self, urls: list) -> dict:
-        results = {}
-        for url in urls:
-            try:
-                response = requests.get(url)
-                response.raise_for_status()
-                soup = BeautifulSoup(response.content, 'html.parser')
-                text_content = soup.get_text()
-                results[url] = text_content.strip()
-            except requests.RequestException as e:
-                results[url] = f"An error occurred while fetching the URL: {str(e)}"
-        return results
+class ThreatSpider(scrapy.Spider):
+    name = 'threat_spider'
+    
+    def __init__(self, url=None, threat_name=None, *args, **kwargs):
+        super(ThreatSpider, self).__init__(*args, **kwargs)
+        self.start_urls = [url]
+        self.threat_name = threat_name
+        self.threat_info = ScrapedThreatInfo()
+
+    def parse(self, response):
+        self.threat_info.name = self.threat_name or self.extract_text(response, '//h1')
+        self.threat_info.description = self.extract_text(response, '//meta[@name="description"]/@content')
+        self.threat_info.threat_type = self.extract_text(response, '//p[contains(text(), "Type:")]')
+        
+        # Extract IOCs
+        self.threat_info.iocs["ip_addresses"] = self.extract_patterns(response, r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b')
+        self.threat_info.iocs["domains"] = self.extract_patterns(response, r'\b(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}\b')
+        self.threat_info.iocs["urls"] = response.xpath('//a/@href').getall()
+        self.threat_info.iocs["file_hashes"] = self.extract_patterns(response, r'\b[a-fA-F0-9]{32,64}\b')
+        self.threat_info.iocs["email_addresses"] = self.extract_patterns(response, r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
+        
+        # Extract TTPs (simplified, might need refinement)
+        ttp_text = self.extract_text(response, '//p[contains(text(), "TTP") or contains(text(), "Tactics, Techniques, and Procedures")]')
+        if ttp_text:
+            self.threat_info.ttps["tactics"] = [t.strip() for t in ttp_text.split(',') if t.strip()]
+        
+        # Extract other information (simplified, might need refinement)
+        self.threat_info.threat_actors = [{"name": actor.strip()} for actor in self.extract_text(response, '//p[contains(text(), "Threat Actor")]').split(',') if actor.strip()]
+        self.threat_info.cves = [{"id": cve.strip()} for cve in re.findall(r'CVE-\d{4}-\d+', response.text)]
+        self.threat_info.campaigns = [{"name": campaign.strip()} for campaign in self.extract_text(response, '//p[contains(text(), "Campaign")]').split(',') if campaign.strip()]
+        
+        self.threat_info.first_seen = self.extract_date(response, 'First Seen')
+        self.threat_info.last_seen = self.extract_date(response, 'Last Seen')
+        
+        self.threat_info.mitigation_recommendations = self.extract_list(response, 'Mitigation')
+        self.threat_info.related_threats = self.extract_list(response, 'Related Threats')
+        self.threat_info.tags = self.extract_list(response, 'Tags')
+        self.threat_info.references = response.xpath('//a[contains(@href, "http")]/@href').getall()
+
+    def extract_text(self, response, xpath):
+        return ' '.join(response.xpath(f'{xpath}//text()').getall()).strip()
+
+    def extract_patterns(self, response, pattern):
+        return list(set(re.findall(pattern, response.text)))
+
+    def extract_date(self, response, date_type):
+        date_text = self.extract_text(response, f'//p[contains(text(), "{date_type}")]')
+        try:
+            return str(datetime.strptime(date_text, '%Y-%m-%d').date())
+        except ValueError:
+            return ""
+
+    def extract_list(self, response, list_type):
+        list_text = self.extract_text(response, f'//p[contains(text(), "{list_type}")]')
+        return [item.strip() for item in list_text.split(',') if item.strip()]
+
+class WebScraperTool(Tool):
+    def __init__(self):
+        super().__init__(
+            name="Web Scraper",
+            description="Scrapes specific threat information from a given URL and returns structured data.",
+            func=self.run
+        )
+
+    def _run(self, url: str, threat_name: str) -> Dict:
+        process = CrawlerProcess(settings={
+            'USER_AGENT': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'LOG_LEVEL': 'ERROR'
+        })
+        spider = ThreatSpider(url=url, threat_name=threat_name)
+        process.crawl(spider)
+        process.start()
+        
+        return spider.threat_info.dict()
+
+    def run(self, url: str, threat_name: str) -> str:
+        result = self._run(url, threat_name)
+        return json.dumps(result)
 
 class DiffbotNLPTool(BaseTool):
     name: str = "NLP Tool"
-    description: str = "Processes text to extract threat intelligence entities."
+    description: str = "Processes text to extract threat intelligence entities. Input should be a string."
 
     def _run(self, content: str) -> dict:
         # Use Diffbot NLP tool to process and sort scraped information into entities and relationships

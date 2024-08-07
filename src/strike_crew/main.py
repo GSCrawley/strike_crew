@@ -11,9 +11,15 @@ def main():
     agents_config = load_config(agents_config_path)
     tasks_config = load_config(tasks_config_path)
 
+    llm_config = {
+        "temperature": 0,
+        "model_name": "mixtral-8x7b-32768"
+    }
+
     config = CrewConfig(
         agents_config=agents_config, 
-        tasks_config=tasks_config
+        tasks_config=tasks_config,
+        llm_config=llm_config
         )
 
     strike_crew = StrikeCrew(config)
