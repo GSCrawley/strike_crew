@@ -1,42 +1,59 @@
-# tasks.yaml
 tasks:
-  search_task:
+  initial_search_task:
     context: "Initial threat intelligence gathering phase"
     description: |
       Search for the latest cybersecurity threats related to: {initial_query}
       Use only the following sources: {sources}
-      Gather comprehensive information as per the EmergingThreat model, including threat names, descriptions, IoCs, TTPs, threat actors, campaigns, CVEs, and all other relevant data points.
+      Gather basic information about the threat, including its name, type, and a brief description.
+      Compile a list of relevant URLs for further investigation.
     expected_output: |
       A structured report containing:
-      1. A list of identified threats related to the query
-      2. Detailed information for each threat, following the EmergingThreat model structure
-      3. URLs and references for each piece of information
-      4. Any gaps or uncertainties in the gathered data, clearly marked for further investigation
+      1. Basic information about the identified threat(s) related to the query
+      2. A list of relevant URLs for further investigation
+      3. Any initial observations or patterns noticed during the search
     agent: osint_analyst
 
-  validation_task:
-    context: "Verification and validation of gathered threat intelligence"
+  data_extraction_task:
+    context: "Detailed threat data extraction phase"
     description: |
-      Thoroughly validate and verify the threat intelligence gathered by the OSINT Analyst.
-      Ensure all data points are accurate, consistent, and properly formatted.
-      Cross-reference information with known reliable sources.
-      Assign or verify confidence scores for each piece of information.
+      Using the information and URLs provided by the OSINT Analyst, extract comprehensive threat data.
+      Focus on gathering all relevant information as per the EmergingThreat model.
     expected_output: |
-      A validated threat intelligence report containing:
-      1. Verified information for each identified threat
+      A structured dataset containing:
+      1. Detailed threat descriptions
+      2. Indicators of Compromise (IoCs): IP addresses, domains, URLs, file hashes, email addresses
+      3. Tactics, Techniques, and Procedures (TTPs)
+      4. Associated threat actors and their known aliases
+      5. Connected campaigns
+      6. Targeted sectors and countries
+      7. Exploited CVEs
+      8. First seen and last seen dates
+      9. Data sources and references
+      10. Any additional relevant metadata
+    agent: data_scraper
+
+  validation_task:
+    context: "Threat intelligence validation and enrichment phase"
+    description: |
+      Thoroughly validate and verify the threat intelligence gathered by the Data Scraper.
+      Use the NLP Tool to process and analyze the data for consistency and completeness.
+      Enrich the data with additional context and confidence scores.
+    expected_output: |
+      A validated and enriched threat intelligence report containing:
+      1. Verified information for each identified threat component
       2. Confidence scores for each data point
       3. Any corrections or adjustments made during validation
       4. Flagged inconsistencies or potential false positives
-      5. A list of any information that could not be verified, with explanations
+      5. Additional context or insights derived from the NLP analysis
+      6. A list of any information that could not be verified, with explanations
     agent: validation_agent
 
   graph_creation_task:
-    context: "Creation and updating of the threat intelligence knowledge graph"
+    context: "Knowledge graph creation and updating phase"
     description: |
       Create a new knowledge graph in Neo4j based on the validated threat intelligence.
-      Parse the information into entities, attributes, and relationships.
       Ensure the graph structure adheres to the EmergingThreat model.
-      Create all necessary nodes and relationships with appropriate labels and properties.
+      Use the Graph Update Tool to create all necessary nodes and relationships.
     expected_output: |
       1. Confirmation of a new knowledge graph created in Neo4j
       2. A summary of the graph structure, including:
@@ -48,30 +65,17 @@ tasks:
     agent: knowledge_graph_agent
 
   summary_task:
-    context: "Generation of a comprehensive threat intelligence summary"
+    context: "Final threat intelligence summary generation"
     description: |
-      Create a detailed summary report of the newly discovered and graphed threat intelligence.
+      Create a comprehensive summary report of the newly discovered and graphed threat intelligence.
       Highlight key findings, potential impacts, and recommended actions.
-      Include visualizations or charts if possible to represent the threat landscape.
+      Include references to the created Neo4j graph for further exploration.
     expected_output: |
       A comprehensive report containing:
       1. Executive summary of key findings
-      2. Detailed breakdown of each identified threat
+      2. Detailed breakdown of the identified threat(s)
       3. Potential impacts on various sectors or systems
       4. Recommended mitigation strategies and actions
-      5. Visualizations of the threat landscape (if possible)
-      6. References to the Neo4j graph for further exploration
+      5. References to the Neo4j graph, including sample queries for exploration
+      6. Any gaps in the intelligence or areas requiring further investigation
     agent: knowledge_graph_agent
-
-  output_task:
-    context: "Exporting threat intelligence in various formats"
-    description: |
-      Export the verified and graphed threat intelligence in JSON, CSV, and HTML formats.
-      Ensure all exports contain the full range of information from the EmergingThreat model.
-      Structure the exports in a clear, easily parseable format.
-    expected_output: |
-      1. A JSON file containing the full threat intelligence data
-      2. A CSV file with a flattened version of the threat intelligence data
-      3. An HTML file presenting the threat intelligence in a human-readable format
-      4. Confirmation of successful file creation and their locations
-    agent: validation_agent

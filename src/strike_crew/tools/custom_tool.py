@@ -3,7 +3,7 @@ from neo4j import GraphDatabase
 from dotenv import load_dotenv
 import scrapy
 from scrapy.crawler import CrawlerProcess
-from typing import List, Dict
+from typing import List, Dict, Callable
 import os
 import json 
 import re
@@ -192,14 +192,21 @@ class ThreatSpider(scrapy.Spider):
         return [item.strip() for item in list_text.split(',') if item.strip()]
 
 class WebScraperTool(Tool):
+    name: str = "Web Scraper"
+    description: str = "Scrapes specific threat information from a given URL and returns structured data."
+
     def __init__(self):
         super().__init__(
-            name="Web Scraper",
-            description="Scrapes specific threat information from a given URL and returns structured data.",
+            name=self.name,
+            description=self.description,
             func=self.run
         )
+    
+    def run(self, url: str, threat_name: str = "") -> str:
+        result = self._run(url, threat_name)
+        return json.dumps(result)
 
-    def _run(self, url: str, threat_name: str) -> Dict:
+    def _run(self, url: str, threat_name: str = "") -> Dict:
         process = CrawlerProcess(settings={
             'USER_AGENT': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'LOG_LEVEL': 'ERROR'
@@ -210,49 +217,83 @@ class WebScraperTool(Tool):
         
         return spider.threat_info.dict()
 
-    def run(self, url: str, threat_name: str) -> str:
-        result = self._run(url, threat_name)
-        return json.dumps(result)
-
-class DiffbotNLPTool(BaseTool):
+class NLPTool(Tool):
     name: str = "NLP Tool"
-    description: str = "Processes text to extract threat intelligence entities. Input should be a string."
+    description: str = "Processes text to extract threat intelligence entities."
 
-    def _run(self, content: str) -> dict:
-        # Use Diffbot NLP tool to process and sort scraped information into entities and relationships
-        response = diffbot_nlp.nlp_request(content)
-        entities = diffbot_nlp.process_response(response, content)
-        return entities
-        # # Placeholder implementation - replace with actual NLP processing logic
-        # entities = {
-        #     "threat_actors": ["Actor1", "Actor2"],
-        #     "CVEs": ["CVE-2021-12345", "CVE-2021-67890"],
-        #     "TTPs": ["Phishing", "Malware"],
-        #     "IOCs": ["192.168.1.1", "example.com"]
-        # }
-        # return entities
-
-class DiffbotGraphUpdateTool(BaseTool):
-    name: str = "Neo4J Update"
-    description: str = "Updates Neo4J database with new knowledge graphs."
-
-    def __init__(self, uri, user, password):
-        super().__init__()
-        self._neo4j_db = Neo4jDatabase(host=uri, user=user, password=password)
-
-    def _run(self, entities: dict) -> str:
-        # Create new knowledge graphs in Neo4J using DiffbotGraphTransformer
-        graph_documents = diffbot_nlp.convert_to_graph_documents(entities)
-        graph.add_graph_documents(graph_documents)
-        return "Neo4J database updated successfully."
+    def run(self, content: str) -> str:
         try:
-            with self._neo4j_db._driver.session(database=self._neo4j_db._database) as session:
-                for entity_type, entity_list in entities.items():
-                    for entity in entity_list:
-                        query = f"MERGE (e:{entity_type} {{name: '{entity}'}})"
-                        session.run(query)
-            return "Neo4J database updated successfully."
-        except Exception as e:
-            return f"Failed to update Neo4J database: {str(e)}"
-        def close(self):
-            self._neo4j_db._driver.close()
+            # Parse the JSON string back into a dictionary
+            data = json.loads(content)
+            # Process the data to extract entities
+            entities = self._extract_entities(data)
+            return json.dumps(entities)
+        except json.JSONDecodeError:
+            # If the input is not JSON, process it as plain text
+            entities = self._extract_entities_from_text(content)
+            return json.dumps(entities)
+
+    def _extract_entities(self, data: Dict) -> Dict:
+        # Extract entities from the structured data
+        # This is a simplified example; you'd want to implement more sophisticated entity extraction here
+        entities = {
+            "threat_name": data.get("name", ""),
+            "cves": data.get("iocs", {}).get("cves", []),
+            "ttps": data.get("ttps", {}),
+            "targeted_systems": data.get("targeted_systems", []),
+            "data_sources": data.get("data_sources", [])
+        }
+        return entities
+
+    def _extract_entities_from_text(self, text: str) -> Dict:
+        # Implement text-based entity extraction here
+        # This is where you'd use NLP techniques to extract entities from unstructured text
+        # For now, we'll just return a placeholder
+        return {"extracted_text": text}
+
+class GraphUpdateTool(Tool):
+    name: str = "Graph Update Tool"
+    description: str = "Creates or updates nodes and edges in the Neo4j graph database."
+
+    def run(self, entities: str) -> str:
+        data = json.loads(entities)
+        graph_id = self._update_graph(data)
+        return json.dumps({"graph_id": graph_id})
+
+    def _update_graph(self, data: Dict) -> str:
+        graph_id = str(uuid.uuid4())
+        
+        with GraphDatabase.driver(self.neo4j_uri, auth=(self.neo4j_user, self.neo4j_password)) as driver:
+            with driver.session() as session:
+                session.write_transaction(self._create_threat_node, data, graph_id)
+        
+        return graph_id
+
+    @staticmethod
+    def _create_threat_node(tx, data: Dict, graph_id: str):
+        query = (
+            "CREATE (t:Threat {name: $name, graph_id: $graph_id}) "
+            "WITH t "
+            "UNWIND $cves AS cve "
+            "MERGE (c:CVE {id: cve}) "
+            "CREATE (t)-[:HAS_CVE]->(c) "
+            "WITH t "
+            "UNWIND $ttps AS ttp "
+            "MERGE (p:TTP {name: ttp}) "
+            "CREATE (t)-[:USES_TTP]->(p) "
+            "WITH t "
+            "UNWIND $targeted_systems AS system "
+            "MERGE (s:System {name: system}) "
+            "CREATE (t)-[:TARGETS]->(s) "
+            "WITH t "
+            "UNWIND $data_sources AS source "
+            "MERGE (d:DataSource {name: source}) "
+            "CREATE (t)-[:DISCOVERED_BY]->(d)"
+        )
+        tx.run(query, 
+               name=data['threat_name'],
+               graph_id=graph_id,
+               cves=data['cves'],
+               ttps=data['ttps'].get('techniques', []),
+               targeted_systems=data['targeted_systems'],
+               data_sources=data['data_sources'])

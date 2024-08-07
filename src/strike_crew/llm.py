@@ -9,6 +9,10 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from groq import InternalServerError
 from strike_crew.config import GroqLLMConfig
 
+class GroqLLMConfig(BaseModel):
+    temperature: float = 0
+    model_name: str = "mixtral-8x7b-32768"
+    model_config['protected_namespaces'] = ()
 
 class CustomGroqLLM(BaseChatModel):
     config: GroqLLMConfig

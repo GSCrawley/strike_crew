@@ -22,7 +22,7 @@ from strike_crew.llm import CustomGroqLLM
 from strike_crew.config import CrewConfig
 from strike_crew.models import EmergingThreat, IOC, TTP, ThreatActor, CVE, Campaign
 from strike_crew.tools.custom_tool import (
-    WebSearchTool, WebScraperTool, DiffbotNLPTool, DiffbotGraphUpdateTool
+    WebSearchTool, WebScraperTool, NLPTool, GraphUpdateTool
 )
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
