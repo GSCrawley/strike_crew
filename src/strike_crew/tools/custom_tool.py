@@ -1,21 +1,27 @@
-from crewai_tools import BaseTool, Tool
+# from crewai_tools import BaseTool
+from langchain.tools import Tool, BaseTool
 from neo4j import GraphDatabase
 from dotenv import load_dotenv
-import scrapy
+from scrapy import Spider, Request, signals
 from scrapy.crawler import CrawlerProcess
-from typing import List, Dict, Callable
+from typing import List, Dict, Callable, Any, Optional, Type
+from twisted.internet import reactor
+from scrapy.utils.project import get_project_settings
 import os
 import json 
 import re
+import uuid
+from diffbot import DiffbotClient  # Make sure to import this at the top of your file
+
 from datetime import datetime
 import pprint
 import requests
 from urllib.parse import urlparse
-from pydantic import PrivateAttr, BaseModel
+from pydantic import PrivateAttr, BaseModel, Field
 from bs4 import BeautifulSoup
 from langchain_community.graphs import Neo4jGraph
 from langchain_experimental.graph_transformers.diffbot import DiffbotGraphTransformer
-from langchain_community.utilities.google_serper import GoogleSerperAPIWrapper
+from langchain_community.utilities import SerpAPIWrapper
 from strike_crew.models import EmergingThreat
 
 load_dotenv()
@@ -26,7 +32,7 @@ user = os.getenv('NEO4J_USER')
 password = os.getenv('NEO4J_PASSWORD')
 nlp = os.getenv('DIFFBOT_NLP_API_TOKEN')
 custom_search = os.getenv('GOOGLE_API_KEY')
-api_key = os.getenv('SERPER_API_KEY')
+api_key = os.getenv('SERPAPI_API_KEY')
 search_engine = os.getenv('GOOGLE_CSE_ID')
 
 diffbot_nlp = DiffbotGraphTransformer(nlp)
@@ -96,19 +102,24 @@ class Neo4jDatabase:
 
 class WebSearchTool(BaseTool):
     name: str = "Web Search"
-    description: str = "Searches the web for information based on user queries."
-    _search: GoogleSerperAPIWrapper = PrivateAttr()  # Use PrivateAttr to exclude from Pydantic validation
+    description: str = "Searches the web for information based on user queries, using SerpAPI."
+    search: SerpAPIWrapper = Field(default_factory=SerpAPIWrapper) 
     
-    def __init__(self, api_key: str):
-        super().__init__()
-        self._search = GoogleSerperAPIWrapper(api_key=api_key)
+    def __init__(self, api_key: str, **kwargs):
+        super().__init__(**kwargs)
+        self.search = SerpAPIWrapper()
 
     def _run(self, query: str) -> str:
         try:
-            results = self._search.run(query)
+            results = self.search.run(query)
             return results
         except Exception as e:
             return f"An error occurred: {str(e)}"
+    
+    async def _arun(self, query: str) -> str:
+        # Implement async version if needed
+        return self._run(query)
+    
 
 class ScrapedThreatInfo(BaseModel):
     name: str = ""
@@ -135,44 +146,52 @@ class ScrapedThreatInfo(BaseModel):
     tags: List[str] = []
     references: List[str] = []
 
-class ThreatSpider(scrapy.Spider):
+class ThreatSpider(Spider):
     name = 'threat_spider'
     
-    def __init__(self, url=None, threat_name=None, *args, **kwargs):
+    def __init__(self, url, threat_name, *args, **kwargs):
         super(ThreatSpider, self).__init__(*args, **kwargs)
         self.start_urls = [url]
         self.threat_name = threat_name
-        self.threat_info = ScrapedThreatInfo()
+        self.threat_info = {}
 
     def parse(self, response):
-        self.threat_info.name = self.threat_name or self.extract_text(response, '//h1')
-        self.threat_info.description = self.extract_text(response, '//meta[@name="description"]/@content')
-        self.threat_info.threat_type = self.extract_text(response, '//p[contains(text(), "Type:")]')
-        
+        self.threat_info['name'] = self.threat_name or response.css('h1::text').get()
+        self.threat_info['description'] = response.css('meta[name="description"]::attr(content)').get()
+        self.threat_info['threat_type'] = response.xpath('//p[contains(text(), "Type:")]//text()').get()
+
         # Extract IOCs
-        self.threat_info.iocs["ip_addresses"] = self.extract_patterns(response, r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b')
-        self.threat_info.iocs["domains"] = self.extract_patterns(response, r'\b(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}\b')
-        self.threat_info.iocs["urls"] = response.xpath('//a/@href').getall()
-        self.threat_info.iocs["file_hashes"] = self.extract_patterns(response, r'\b[a-fA-F0-9]{32,64}\b')
-        self.threat_info.iocs["email_addresses"] = self.extract_patterns(response, r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
+        self.threat_info['iocs'] = {
+            'ip_addresses': response.xpath('//text()').re(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'),
+            'domains': response.xpath('//text()').re(r'\b(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}\b'),
+            'urls': response.css('a::attr(href)').getall(),
+            'file_hashes': response.xpath('//text()').re(r'\b[a-fA-F0-9]{32,64}\b'),
+            'email_addresses': response.xpath('//text()').re(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
+        }
         
-        # Extract TTPs (simplified, might need refinement)
-        ttp_text = self.extract_text(response, '//p[contains(text(), "TTP") or contains(text(), "Tactics, Techniques, and Procedures")]')
-        if ttp_text:
-            self.threat_info.ttps["tactics"] = [t.strip() for t in ttp_text.split(',') if t.strip()]
+        # Extract TTPs
+        self.threat_info['ttps'] = response.xpath('//p[contains(text(), "TTP") or contains(text(), "Tactics, Techniques, and Procedures")]//text()').getall()
         
-        # Extract other information (simplified, might need refinement)
-        self.threat_info.threat_actors = [{"name": actor.strip()} for actor in self.extract_text(response, '//p[contains(text(), "Threat Actor")]').split(',') if actor.strip()]
-        self.threat_info.cves = [{"id": cve.strip()} for cve in re.findall(r'CVE-\d{4}-\d+', response.text)]
-        self.threat_info.campaigns = [{"name": campaign.strip()} for campaign in self.extract_text(response, '//p[contains(text(), "Campaign")]').split(',') if campaign.strip()]
+        # Extract threat actors
+        self.threat_info['threat_actors'] = [{"name": actor.strip()} for actor in self.extract_text(response, '//p[contains(text(), "Threat Actor")]').split(',') if actor.strip()]
         
-        self.threat_info.first_seen = self.extract_date(response, 'First Seen')
-        self.threat_info.last_seen = self.extract_date(response, 'Last Seen')
+        # Extract CVEs
+        self.threat_info['cves'] = [{"id": cve.strip()} for cve in re.findall(r'CVE-\d{4}-\d+', response.text)]
         
-        self.threat_info.mitigation_recommendations = self.extract_list(response, 'Mitigation')
-        self.threat_info.related_threats = self.extract_list(response, 'Related Threats')
-        self.threat_info.tags = self.extract_list(response, 'Tags')
-        self.threat_info.references = response.xpath('//a[contains(@href, "http")]/@href').getall()
+        # Extract campaigns
+        self.threat_info['campaigns'] = [{"name": campaign.strip()} for campaign in self.extract_text(response, '//p[contains(text(), "Campaign")]').split(',') if campaign.strip()]
+        
+        # Extract dates
+        self.threat_info['first_seen'] = self.extract_date(response, 'First Seen')
+        self.threat_info['last_seen'] = self.extract_date(response, 'Last Seen')
+        
+        # Extract additional information
+        self.threat_info['mitigation_recommendations'] = self.extract_list(response, 'Mitigation')
+        self.threat_info['related_threats'] = self.extract_list(response, 'Related Threats')
+        self.threat_info['tags'] = self.extract_list(response, 'Tags')
+        self.threat_info['references'] = response.xpath('//a[contains(@href, "http")]/@href').getall()
+
+        yield self.threat_info
 
     def extract_text(self, response, xpath):
         return ' '.join(response.xpath(f'{xpath}//text()').getall()).strip()
@@ -191,59 +210,155 @@ class ThreatSpider(scrapy.Spider):
         list_text = self.extract_text(response, f'//p[contains(text(), "{list_type}")]')
         return [item.strip() for item in list_text.split(',') if item.strip()]
 
-class WebScraperTool(Tool):
-    name: str = "Web Scraper"
-    description: str = "Scrapes specific threat information from a given URL and returns structured data."
+class WebScraperInput(BaseModel):
+     query: str = Field(..., description="The URL to scrape for threat information")
 
-    def __init__(self):
-        super().__init__(
-            name=self.name,
-            description=self.description,
-            func=self.run
-        )
-    
-    def run(self, url: str, threat_name: str = "") -> str:
-        result = self._run(url, threat_name)
-        return json.dumps(result)
+class WebScraperTool(BaseTool):
+    name: str = Field(default="Web Scraper")
+    description: str = Field(default="A tool for scraping web content.")
+    args_schema:Type[BaseModel] = Field(default=WebScraperInput)
 
-    def _run(self, url: str, threat_name: str = "") -> Dict:
+    def __init__(self, **data):
+        super().__init__(**data)
+
+    def _run(self, url: str, threat_name: Optional[str] = None) -> str:
         process = CrawlerProcess(settings={
             'USER_AGENT': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'LOG_LEVEL': 'ERROR'
         })
-        spider = ThreatSpider(url=url, threat_name=threat_name)
-        process.crawl(spider)
+        results = []
+
+        def crawler_results(item, response, spider):
+            results.append(item)
+
+        process.crawl(ThreatSpider, url=url, threat_name=threat_name)
+        process.signals.connect(crawler_results, signal=signals.item_scraped)
+
         process.start()
-        
-        return spider.threat_info.dict()
+
+        if results:
+            return json.dumps(results[0], default=str)
+        else:
+            return json.dumps({"error": "No data scraped"})
+
+# class WebScraperSchema(BaseModel):
+#     url: str = Field(..., description="The URL to scrape for threat information")
+#     threat_name: str = Field("", description="Optional name of the threat to search for")
+
+class NLPToolInput(BaseModel):
+    content: str = Field(..., description="The text content to process for entity extraction")
 
 class NLPTool(Tool):
     name: str = "NLP Tool"
-    description: str = "Processes text to extract threat intelligence entities."
+    description: str = "Processes text to extract threat intelligence entities using Diffbot NLP."
 
-    def run(self, content: str) -> str:
-        try:
-            # Parse the JSON string back into a dictionary
-            data = json.loads(content)
-            # Process the data to extract entities
-            entities = self._extract_entities(data)
-            return json.dumps(entities)
-        except json.JSONDecodeError:
-            # If the input is not JSON, process it as plain text
-            entities = self._extract_entities_from_text(content)
-            return json.dumps(entities)
+    def __init__(self, diffbot_nlp):
+        self.diffbot_nlp = diffbot_nlp
+        super().__init__(
+            name=self.name,
+            description=self.description,
+            func=self._run,
+            args_schema=NLPToolInput
+        )
 
-    def _extract_entities(self, data: Dict) -> Dict:
-        # Extract entities from the structured data
-        # This is a simplified example; you'd want to implement more sophisticated entity extraction here
-        entities = {
-            "threat_name": data.get("name", ""),
-            "cves": data.get("iocs", {}).get("cves", []),
-            "ttps": data.get("ttps", {}),
-            "targeted_systems": data.get("targeted_systems", []),
-            "data_sources": data.get("data_sources", [])
+
+    def _run(self, content: str) -> str:
+        # Process the data to extract entities
+        entities = self._extract_entities(content)
+        return json.dumps(entities)
+        
+    def _extract_entities(self, content: str) -> Dict:
+        # Use Diffbot NLP to extract entities
+        nlp_result = self.diffbot_nlp.transform(content)
+        
+        # Initialize a dictionary to store extracted entities
+        extracted_entities = {}
+        
+        # Extract entities based on EmergingThreat schema
+        extracted_entities['name'] = self._extract_name(nlp_result)
+        extracted_entities['description'] = self._extract_description(nlp_result)
+        extracted_entities['threat_type'] = self._extract_threat_type(nlp_result)
+        extracted_entities['severity'] = self._extract_severity(nlp_result)
+        extracted_entities['status'] = self._extract_status(nlp_result)
+        extracted_entities['confidence'] = self._extract_confidence(nlp_result)
+        extracted_entities['tactics'] = self._extract_tactics(nlp_result)
+        extracted_entities['techniques'] = self._extract_techniques(nlp_result)
+        extracted_entities['threat_actors'] = self._extract_threat_actors(nlp_result)
+        extracted_entities['malware_families'] = self._extract_malware_families(nlp_result)
+        extracted_entities['indicators'] = self._extract_indicators(nlp_result)
+        extracted_entities['targeted_sectors'] = self._extract_targeted_sectors(nlp_result)
+        extracted_entities['targeted_countries'] = self._extract_targeted_countries(nlp_result)
+        extracted_entities['references'] = self._extract_references(nlp_result)
+        extracted_entities['last_updated'] = self._extract_last_updated(nlp_result)
+        
+        return extracted_entities
+
+    # Helper methods to extract specific entities
+    def _extract_name(self, nlp_result) -> str:
+        # Logic to extract name from NLP result
+        pass
+
+    def _extract_description(self, nlp_result) -> str:
+        # Logic to extract description from NLP result
+        pass
+
+    def _extract_threat_type(self, nlp_result) -> str:
+        # Logic to extract threat type from NLP result
+        pass
+
+    def _extract_severity(self, nlp_result) -> str:
+        # Logic to extract severity from NLP result
+        pass
+
+    def _extract_status(self, nlp_result) -> str:
+        # Logic to extract status from NLP result
+        pass
+
+    def _extract_confidence(self, nlp_result) -> float:
+        # Logic to extract confidence from NLP result
+        pass
+
+    def _extract_tactics(self, nlp_result) -> List[str]:
+        # Logic to extract tactics from NLP result
+        pass
+
+    def _extract_techniques(self, nlp_result) -> List[str]:
+        # Logic to extract techniques from NLP result
+        pass
+
+    def _extract_threat_actors(self, nlp_result) -> List[str]:
+        # Logic to extract threat actors from NLP result
+        pass
+
+    def _extract_malware_families(self, nlp_result) -> List[str]:
+        # Logic to extract malware families from NLP result
+        pass
+
+    def _extract_indicators(self, nlp_result) -> Dict[str, List[str]]:
+        # Logic to extract indicators from NLP result
+        return {
+            "ip_addresses": [],
+            "domains": [],
+            "urls": [],
+            "file_hashes": []
         }
-        return entities
+
+    def _extract_targeted_sectors(self, nlp_result) -> List[str]:
+        # Logic to extract targeted sectors from NLP result
+        pass
+
+    def _extract_targeted_countries(self, nlp_result) -> List[str]:
+        # Logic to extract targeted countries from NLP result
+        pass
+
+    def _extract_references(self, nlp_result) -> List[str]:
+        # Logic to extract references from NLP result
+        pass
+
+    def _extract_last_updated(self, nlp_result) -> str:
+        # Logic to extract last updated date from NLP result
+        pass
+
 
     def _extract_entities_from_text(self, text: str) -> Dict:
         # Implement text-based entity extraction here
@@ -251,19 +366,34 @@ class NLPTool(Tool):
         # For now, we'll just return a placeholder
         return {"extracted_text": text}
 
-class GraphUpdateTool(Tool):
+class GraphUpdateInput(BaseModel):
+    entities: str = Field(..., description="JSON string containing entities to update in the graph")
+
+class GraphUpdateTool(BaseTool):
     name: str = "Graph Update Tool"
-    description: str = "Creates or updates nodes and edges in the Neo4j graph database."
+    description: str = "Creates or updates nodes and edges in the Neo4j graph database. Input should be a JSON string containing 'entities'."
+
+    def __init__(self):
+        super().__init__(
+            func=self.run,
+            args_schema=GraphUpdateInput
+        )
 
     def run(self, entities: str) -> str:
-        data = json.loads(entities)
-        graph_id = self._update_graph(data)
-        return json.dumps({"graph_id": graph_id})
-
+        try:
+            # Parse the input JSON string
+            entities_data = json.loads(entities)
+            graph_id = self._update_graph(entities_data)
+            return json.dumps({"status": "success", "message":"Graph updated successfully. Graph ID: " + graph_id})
+        except json.JSONDecodeError:
+            return json.dumps({"status": "error", "message": "Invalid JSON input"})
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e)})
+        
     def _update_graph(self, data: Dict) -> str:
         graph_id = str(uuid.uuid4())
         
-        with GraphDatabase.driver(self.neo4j_uri, auth=(self.neo4j_user, self.neo4j_password)) as driver:
+        with GraphDatabase.driver(uri=self.neo4j_uri, auth=(self.neo4j_user, self.neo4j_password)) as driver:
             with driver.session() as session:
                 session.write_transaction(self._create_threat_node, data, graph_id)
         

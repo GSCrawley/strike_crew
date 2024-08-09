@@ -1,0 +1,36 @@
+[
+  {
+    "name": "",
+    "description": "",
+    "threat_type": "",
+    "iocs": {
+      "ip_addresses": [],
+      "domains": [],
+      "urls": [],
+      "file_hashes": [],
+      "email_addresses": []
+    },
+    "ttps": {
+      "tactics": [],
+      "techniques": [],
+      "sub_techniques": [],
+      "procedures": []
+    },
+    "threat_actors": [],
+    "cves": [],
+    "campaigns": [],
+    "targeted_sectors": [],
+    "targeted_countries": [],
+    "first_seen": null,
+    "last_seen": null,
+    "confidence_score": 0.0,
+    "data_sources": [],
+    "mitigation_recommendations": [],
+    "related_threats": [],
+    "tags": [],
+    "references": [],
+    "entities": [],
+    "relationships": [],
+    "additional_info": {}
+  }
+]

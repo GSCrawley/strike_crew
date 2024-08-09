@@ -1,6 +1,6 @@
 import os
 from typing import Any, List, Optional, Mapping
-from pydantic import BaseModel, Field
+from pydantic import Field
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import ChatResult, ChatGeneration
@@ -8,24 +8,20 @@ from langchain_groq import ChatGroq
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from groq import InternalServerError
 from strike_crew.config import GroqLLMConfig
-
-class GroqLLMConfig(BaseModel):
-    temperature: float = 0
-    model_name: str = "mixtral-8x7b-32768"
-    model_config['protected_namespaces'] = ()
+from strike_crew.utils import APIKeyManager, cached_api_call
 
 class CustomGroqLLM(BaseChatModel):
-    config: GroqLLMConfig
+    config: GroqLLMConfig = Field(default_factory=GroqLLMConfig)
     chat_model: Optional[ChatGroq] = None
-    api_keys: List[str] = []
-    current_key_index: int = 0
+    api_key_manager: Optional[APIKeyManager] = None
 
     class Config:
         arbitrary_types_allowed = True
 
-    def __init__(self, config: GroqLLMConfig):
-        super().__init__(config=config)
-        self.api_keys = self._load_api_keys()
+    def __init__(self, config: GroqLLMConfig, **data: Any):
+        super().__init__(**data)
+        self.config = config
+        self.api_key_manager = APIKeyManager(self._load_api_keys())
         self.chat_model = self._create_chat_model()
 
     def _load_api_keys(self) -> List[str]:
@@ -39,16 +35,16 @@ class CustomGroqLLM(BaseChatModel):
         return keys
 
     def _create_chat_model(self) -> ChatGroq:
+        api_key = self.api_key_manager.get_next_key()
         return ChatGroq(
-            temperature=self.config.temperature, 
+            temperature=self.config.temperature,
             model_name=self.config.model_name,
-            groq_api_key=self.api_keys[self.current_key_index]
+            groq_api_key=api_key
         )
 
     def _switch_api_key(self):
-        self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
         self.chat_model = self._create_chat_model()
-        print(f"Switched to API key {self.current_key_index + 1}")
+        print(f"Switched to API key {self.api_key_manager.current_index + 1}")
 
     @retry(
         stop=stop_after_attempt(3),

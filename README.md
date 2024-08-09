@@ -4,6 +4,10 @@
 
 ### create more powerful custom scraping tool - blogs seem to be protected - scraper tool needs to be able to scrape from blogs
 
+# https://blog.qualys.com/vulnerabilities-threat-research/2024/07/01/regresshion-remote-unauthenticated-code-execution-vulnerability-in-openssh-server
+
+# Graph agent should generate a Neo4j cypher query to enter data into neo4j
+
 # StrikeCrew Crew
 
 Welcome to the StrikeCrew Crew project, powered by [crewAI](https://crewai.com). This template is designed to help you set up a multi-agent AI system with ease, leveraging the powerful and flexible framework provided by crewAI. Our goal is to enable your agents to collaborate effectively on complex tasks, maximizing their collective intelligence and capabilities.
@@ -62,7 +66,3 @@ For support, questions, or feedback regarding the StrikeCrew Crew or crewAI.
 
 Let's create wonders together with the power and simplicity of crewAI.
 
-
-# step 1 -  write a function to extract links and descriptions from the RSS feed. that gets fed to the manager agent, to give it more control of where to look. "use this and extract emerging threats" - be very specific about what constitutes the emerging threat we are looking for.    also prompt it to IGNORE EVERYTHING ELSE OTHER THAN THE EMERGING THREAT WE ARE LOOKING FOR.  
-# manager will look for the LATEST threats. 
-# Manager and OSINT agent should both be given exact definitions of emerging threats

@@ -38,8 +38,8 @@ class Campaign(BaseModel):
 
 class EmergingThreat(BaseModel):
     name: str
-    description: str
-    threat_type: str
+    description: str = ""
+    threat_type: str = ""
     iocs: IOC = Field(default_factory=IOC)
     ttps: TTP = Field(default_factory=TTP)
     threat_actors: List[ThreatActor] = Field(default_factory=list)
@@ -55,7 +55,6 @@ class EmergingThreat(BaseModel):
     related_threats: List[str] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)
     references: List[str] = Field(default_factory=list)
-    nodes: List[Dict[str, Any]] = []
-    edges: List[Dict[str, Any]] = []
-    additional_info: Dict[str, Any] = {}
-
+    entities: List[Dict[str, str]] = Field(default_factory=list)
+    relationships: List[Dict[str, str]] = Field(default_factory=list)
+    additional_info: Dict[str, Any] = Field(default_factory=dict)

@@ -19,17 +19,22 @@ from langchain_core.messages import BaseMessage
 from langchain_core.outputs import ChatResult, ChatGeneration
 from strike_crew.llm import CustomGroqLLM
 # from langchain_openai import ChatOpenAI
-from strike_crew.config import CrewConfig
+from strike_crew.config import CrewConfig, GroqLLMConfig
 from strike_crew.models import EmergingThreat, IOC, TTP, ThreatActor, CVE, Campaign
 from strike_crew.tools.custom_tool import (
     WebSearchTool, WebScraperTool, NLPTool, GraphUpdateTool
 )
+from langchain_experimental.graph_transformers.diffbot import DiffbotGraphTransformer
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+nlp = os.getenv('DIFFBOT_NLP_API_TOKEN')
+diffbot_nlp = DiffbotGraphTransformer(nlp)
 
 class UserInput(BaseModel):
     threat_types: List[str]
@@ -38,6 +43,10 @@ class UserInput(BaseModel):
 class StrikeCrew:
     def __init__(self, config: CrewConfig):
         self.config = config
+        self.groq_llm_config = GroqLLMConfig(
+            temperature=config.llm_config.temperature,
+            model_name=config.llm_config.model_name
+        )
         self.llm = CustomGroqLLM(config.get_llm_config())
         # self.agents = []
         # self.tasks = []
@@ -53,12 +62,17 @@ class StrikeCrew:
         self.last_api_call = 0
 
     def initialize_tools(self):
-        self.web_search_tool = WebSearchTool(os.getenv("GOOGLE_SERPER_API_KEY"))
+        self.web_search_tool = WebSearchTool(os.getenv("SERPAPI_API_KEY"))
         self.web_scraper_tool = WebScraperTool()
         # self.neo4j_search_tool = Neo4JSearchTool(self.neo4j_uri, self.neo4j_user, self.neo4j_password)
-        self.nlp_tool = DiffbotNLPTool()
-        self.graph_update_tool = DiffbotGraphUpdateTool(self.neo4j_uri, self.neo4j_user, self.neo4j_password)
         
+        self.nlp_tool = NLPTool()
+        self.graph_update_tool = GraphUpdateTool(
+                        neo4j_uri=self.neo4j_uri,
+                        neo4j_user=self.neo4j_user,
+                        neo4j_password=self.neo4j_password
+        )
+
     # def groq_llm(self):
     #     return CustomGroqLLM()
 
@@ -71,6 +85,17 @@ class StrikeCrew:
             allow_delegation=False,
             llm=self.llm,
             tools=[self.web_search_tool, self.web_scraper_tool, self.nlp_tool]
+        )
+
+    def data_scraper(self) -> Agent:
+        return Agent(
+            role="Data Scraper",
+            goal="Scrape and extract threat intelligence data",
+            backstory="Expert in data scraping and extraction techniques",
+            verbose=True,
+            allow_delegation=False,
+            llm=self.llm,
+            tools=[self.web_search_tool, self.web_scraper_tool]
         )
 
     def validation_agent(self) -> Agent:
@@ -92,7 +117,18 @@ class StrikeCrew:
             verbose=True,
             allow_delegation=False,
             llm=self.llm,
-            tools=[self.web_search_tool, self.graph_update_tool]
+            tools=[self.nlp_tool, self.graph_update_tool]
+        )
+
+    def database_init_agent(self) -> Agent:
+        return Agent(
+            role="Database Schema Initializer",
+            goal="Ensure the Neo4J database has the correct schema for threat intelligence",
+            backstory="You are a database expert specializing in graph databases for cybersecurity",
+            verbose=True,
+            allow_delegation=False,
+            llm=self.llm,
+            tools=[self.nlp_tool, self.graph_update_tool]
         )
 
     def search_task(self, initial_query: str, sources: List[str]) -> Task:
@@ -103,13 +139,34 @@ class StrikeCrew:
                             "including threat names, descriptions, IOCs, and other relevant details.",
             agent=self.osint_analyst()
         )
-
+    
+    def data_extraction_task(self) -> Task:
+        return Task(
+            description="Extract threat intelligence data from the search results.",
+            expected_output="A list of threat intelligence data in str format, with confidence scores and any discrepancies noted.",
+            agent=self.data_scraper()
+        )
+    
+    # def extract_iocs_task(self) -> Task:
+    #     return Task(
+    #         description="Identify and extract Indicators of Compromise (IOCs) from the threat intelligence data.",
+    #         expected_output="A list of IOCs in str format, with confidence scores and any discrepancies noted.",
+    #         agent=self.data_scraper()
+    #     )
+    
     def validation_task(self) -> Task:
         return Task(
             description="Validate and verify the gathered threat intelligence. Ensure all information aligns with the EmergingThreat schema.",
-            expected_output="A validated list of threat intelligence data in str format, with confidence scores and any discrepancies noted.",
+            expected_output="A validated list of threat intelligence data in json format, with confidence scores and any discrepancies noted.",
             agent=self.validation_agent()
         )
+
+    # def validate_iocs_task(self) -> Task:
+    #     return Task(
+    #         description="Validate and verify the gathered threat intelligence. Ensure all information aligns with the EmergingThreat schema.",
+    #         expected_output="A validated list of threat intelligence data in json format, with confidence scores and any discrepancies noted.",
+    #         agent=self.validation_agent()
+    #     )
 
     def knowledge_graph_task(self) -> Task:
         return Task(
@@ -146,10 +203,13 @@ class StrikeCrew:
             print(f"Generated query: {initial_query}")
             
             crew = Crew(
-                agents=[self.osint_analyst(), self.validation_agent(), self.knowledge_graph_agent()],
+                agents=[self.osint_analyst(), self.data_scraper(), self.validation_agent(), self.knowledge_graph_agent(), self.database_init_agent()],
                 tasks=[
                     self.search_task(initial_query, user_input.sources),
                     self.validation_task(),
+                    self.data_extraction_task(),
+                    # self.extract_iocs_task(),
+                    # self.validate_iocs_task(),
                     self.knowledge_graph_task()
                 ],
                 process=Process.sequential,
@@ -172,7 +232,15 @@ class StrikeCrew:
             
             if not self._should_continue():
                 break
-
+    
+    def execute_tool_with_fallback(self, primary_tool, fallback_tool, input_data):
+        try:
+            result = primary_tool.run(input_data)
+            return result
+        except Exception as e:
+            print(f"Primary tool failed: {e}. Attempting fallback.")
+            return fallback_tool.run(input_data)
+            
     def _get_user_input(self) -> UserInput:
         threat_types = input("Enter specific types of threats you're interested in (comma-separated, or press Enter for all): ").split(',')
         threat_types = [t.strip() for t in threat_types if t.strip()]
@@ -192,43 +260,50 @@ class StrikeCrew:
 
     def _process_results(self, raw_results: str) -> List[EmergingThreat]:
         processed_results = []
-        
-        # Assuming the knowledge graph agent returns a JSON string
-        try:
-            threat_data = json.loads(raw_results)
-        except json.JSONDecodeError:
-            print("Error: Unable to parse the results as JSON.")
-            return []
+        current_threat = None
+        current_section = None
 
-        for threat in threat_data:
-            emerging_threat = EmergingThreat(
-                name=threat.get('name', 'Unknown Threat'),
-                description=threat.get('description', ''),
-                threat_type=threat.get('threat_type', 'Unknown'),
-                iocs=IOC(**threat.get('iocs', {})),
-                ttps=TTP(**threat.get('ttps', {})),
-                threat_actors=[ThreatActor(**actor) for actor in threat.get('threat_actors', [])],
-                cves=[CVE(**cve) for cve in threat.get('cves', [])],
-                campaigns=[Campaign(**campaign) for campaign in threat.get('campaigns', [])],
-                targeted_sectors=threat.get('targeted_sectors', []),
-                targeted_countries=threat.get('targeted_countries', []),
-                first_seen=datetime.fromisoformat(threat['first_seen']) if threat.get('first_seen') else None,
-                last_seen=datetime.fromisoformat(threat['last_seen']) if threat.get('last_seen') else None,
-                confidence_score=threat.get('confidence_score', 0.0),
-                data_sources=threat.get('data_sources', []),
-                mitigation_recommendations=threat.get('mitigation_recommendations', []),
-                related_threats=threat.get('related_threats', []),
-                tags=threat.get('tags', []),
-                references=threat.get('references', []),
-                nodes=threat.get('nodes', []),
-                edges=threat.get('edges', []),
-                additional_info=threat.get('additional_info', {})
-            )
-            processed_results.append(emerging_threat)
-        
+        for line in raw_results.split('\n'):
+            if line.startswith("* Threat:"):
+                if current_threat:
+                    processed_results.append(current_threat)
+                current_threat = EmergingThreat(
+                    name=line.split(":")[1].strip(),
+                    entities=[],
+                    relationships=[]
+                )
+            elif '* Entities:' in line:
+                current_section = 'entities'
+            elif '* Relationships:' in line:
+                current_section = 'relationships'
+            elif current_section == 'entities' and line.strip().startswith('+'):
+                entity = self._parse_entity(line)
+                if entity and current_threat:
+                    current_threat.entities.append(entity)
+            elif current_section == 'relationships' and line.strip().startswith('+'):
+                relationship = self._parse_relationship(line)
+                if relationship and current_threat:
+                    current_threat.relationships.append(relationship)
+
+        if current_threat:
+            processed_results.append(current_threat)
+
         return processed_results
 
+    def _parse_entity(self, line: str) -> Dict:
+        match = re.match(r'\+\s+(.+?):\s+(.+)', line.strip())
+        if match:
+            name, entity_type = match.groups()
+            return {'name': name.strip(), 'type': entity_type.strip()}
+        return {}
 
+    def _parse_relationship(self, line: str) -> Dict:
+        match = re.match(r'\+\s+(.+?)\s+-\s+(.+?)\s+-\s+(.+)', line.strip())
+        if match:
+            source, rel_type, target = match.groups()
+            return {'source': source.strip(), 'type': rel_type.strip(), 'target': target.strip()}
+        return {}
+   
     def _save_json_output(self, results: List[EmergingThreat]):
         json_data = [result.dict() for result in results]
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -255,30 +330,6 @@ class StrikeCrew:
                     f.write(f"  - ({edge[0]}) -[{edge[1]}]-> ({edge[2]})\n")
                 f.write("\n")
         print(f"Threat intelligence report saved to {filename}")
-
-    # def _update_neo4j_database(self, results: List[EmergingThreat]) -> str:
-    #     graph_id = str(uuid.uuid4())
-    #     try:
-    #         with GraphDatabase.driver(self.neo4j_uri, auth=(self.neo4j_user, self.neo4j_password)) as driver:
-    #             with driver.session() as session:
-    #                 for threat in results:
-    #                     session.write_transaction(self._create_threat_node, threat, graph_id)
-                    
-    #                 # Verify that nodes were created
-    #                 verification_query = (
-    #                     "MATCH (t:EmergingThreat {graph_id: $graph_id}) "
-    #                     "RETURN count(t) as count"
-    #                 )
-    #                 result = session.run(verification_query, graph_id=graph_id).single()
-    #                 if result and result["count"] > 0:
-    #                     print(f"Successfully added {result['count']} EmergingThreat nodes to Neo4j with graph_id: {graph_id}")
-    #                 else:
-    #                     print(f"Warning: No EmergingThreat nodes were found with graph_id: {graph_id}")
-            
-    #         print("Neo4j database updated with new threat intelligence")
-    #     except Exception as e:
-    #         print(f"Error updating Neo4j database: {e}")
-    #     return graph_id
 
     @staticmethod
     def _create_threat_node(tx, threat: EmergingThreat, graph_id: str):

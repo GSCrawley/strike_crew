@@ -1,5 +1,5 @@
 tasks:
-  initial_search_task:
+  search_task:
     context: "Initial threat intelligence gathering phase"
     description: |
       Search for the latest cybersecurity threats related to: {initial_query}
@@ -62,6 +62,7 @@ tasks:
          - Any potential anomalies or issues encountered during creation
       3. The graph ID and instructions on how to query the new graph in Neo4j Browser
       4. A list of any data that could not be incorporated into the graph, with explanations
+      5. Cypher query instructions to enter the knowledge graph data manually in case of issues
     agent: knowledge_graph_agent
 
   summary_task:
@@ -79,3 +80,15 @@ tasks:
       5. References to the Neo4j graph, including sample queries for exploration
       6. Any gaps in the intelligence or areas requiring further investigation
     agent: knowledge_graph_agent
+
+  extract_iocs_task:
+    context: "Extraction of Indicators of Compromise"
+    description: "Extract all potential IOCs from the given text, including IP addresses, domains, file hashes, and CVEs."
+    expected_output: "A list of extracted IOCs categorized by type."
+    agent: data_scraper
+
+  validate_iocs_task:
+    context: "Validation of extracted IOCs"
+    description: "Validate the extracted IOCs against known threat intelligence databases."
+    expected_output: "A list of validated IOCs with confidence scores."
+    agent: validation_agent
