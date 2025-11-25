@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Strike Crew Threat Radar</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; background: radial-gradient(circle at 20% 20%, #0f172a, #020617); color: #e2e8f0; }
+    .glass { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.45); }
+    .grid-bg { background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px); background-size: 30px 30px; }
+  </style>
+</head>
+<body class="min-h-screen grid-bg">
+  <div class="max-w-6xl mx-auto px-6 py-10">
+    <header class="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+      <div>
+        <p class="text-indigo-300 uppercase tracking-[0.25em] text-xs">Strike Crew</p>
+        <h1 class="text-4xl md:text-5xl font-bold text-white mt-2">Threat Intelligence Radar</h1>
+        <p class="text-slate-400 mt-2 max-w-3xl">Live view of high-signal cyber threat intelligence from trusted feeds. Ranked by recency and severity to keep you focused on what matters now.</p>
+        <p class="text-slate-500 text-sm mt-1">Generated {{ generated }}</p>
+      </div>
+      <div class="glass rounded-2xl p-4 flex items-center gap-3">
+        <span class="inline-flex h-3 w-3 rounded-full bg-emerald-400 animate-pulse"></span>
+        <div>
+          <p class="text-xs uppercase tracking-wide text-slate-400">Status</p>
+          <p class="text-white font-semibold">Feeds online</p>
+        </div>
+      </div>
+    </header>
+
+    <section class="mt-8 grid gap-4 md:grid-cols-3">
+      <div class="glass rounded-2xl p-5">
+        <p class="text-slate-400 text-sm">Top sources</p>
+        <ul id="top-sources" class="mt-3 space-y-2 text-sm"></ul>
+      </div>
+      <div class="glass rounded-2xl p-5">
+        <p class="text-slate-400 text-sm">Latest critical</p>
+        <div id="latest" class="mt-3 text-sm text-slate-200"></div>
+      </div>
+      <div class="glass rounded-2xl p-5">
+        <p class="text-slate-400 text-sm">Filters</p>
+        <div class="mt-3 space-y-2">
+          <div class="flex items-center gap-2">
+            <input id="search" type="text" placeholder="Filter by keyword" class="w-full px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="text-xs text-slate-400">Window</label>
+            <select id="days" class="px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700 text-sm">
+              <option value="7">Last 7 days</option>
+              <option value="14" selected>Last 14 days</option>
+              <option value="30">Last 30 days</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="mt-8 glass rounded-2xl p-6">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div>
+          <p class="text-xs uppercase tracking-wide text-slate-500">Live feed</p>
+          <h2 class="text-2xl text-white font-semibold">Latest intelligence stories</h2>
+        </div>
+        <button id="refresh" class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-sm font-semibold text-white rounded-lg transition">
+          <span class="material-icons text-base">refresh</span>Refresh
+        </button>
+      </div>
+      <div id="feed" class="mt-6 grid gap-4 md:grid-cols-2"></div>
+    </section>
+  </div>
+
+  <script>
+    const feedContainer = document.getElementById('feed');
+    const searchInput = document.getElementById('search');
+    const daysSelect = document.getElementById('days');
+    const topSourcesEl = document.getElementById('top-sources');
+    const latestEl = document.getElementById('latest');
+
+    async function loadFeed() {
+      const days = daysSelect.value;
+      const res = await fetch(`/api/feed?days=${days}`);
+      const data = await res.json();
+      renderSummary(data.summary);
+      renderFeed(data.articles);
+    }
+
+    function renderSummary(summary) {
+      topSourcesEl.innerHTML = '';
+      summary.top_sources.forEach(([source, count]) => {
+        const li = document.createElement('li');
+        li.innerHTML = `<div class="flex items-center justify-between"> <span>${source}</span> <span class="text-slate-400">${count}</span> </div>`;
+        topSourcesEl.appendChild(li);
+      });
+
+      if (summary.latest) {
+        latestEl.innerHTML = `
+          <a class="text-indigo-300 hover:text-indigo-200 font-semibold" href="${summary.latest.link}" target="_blank">${summary.latest.title}</a>
+          <p class="text-slate-400 text-xs mt-1">${summary.latest.source} — ${formatDate(summary.latest.published)}</p>
+        `;
+      }
+    }
+
+    function renderFeed(articles) {
+      const query = searchInput.value.toLowerCase();
+      feedContainer.innerHTML = '';
+
+      articles
+        .filter(a => !query || a.title.toLowerCase().includes(query) || a.summary.toLowerCase().includes(query))
+        .forEach(article => {
+          const card = document.createElement('article');
+          card.className = 'p-4 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-indigo-500 transition flex flex-col gap-3';
+          card.innerHTML = `
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <a href="${article.link}" target="_blank" class="text-lg font-semibold text-white hover:text-indigo-300">${article.title}</a>
+                <p class="text-slate-400 text-sm mt-1">${article.source}</p>
+              </div>
+              <span class="px-3 py-1 text-xs rounded-full bg-indigo-500/20 text-indigo-200 border border-indigo-500/30">Score ${article.risk_score}</span>
+            </div>
+            <p class="text-slate-300 text-sm leading-relaxed">${truncate(article.summary, 220)}</p>
+            <div class="flex items-center justify-between text-xs text-slate-500">
+              <p>${formatDate(article.published)}</p>
+              <div class="flex gap-1 flex-wrap">
+                ${article.categories.map(c => `<span class="px-2 py-1 bg-slate-800 rounded-full border border-slate-700">${c}</span>`).join('')}
+              </div>
+            </div>
+          `;
+          feedContainer.appendChild(card);
+        });
+    }
+
+    function truncate(text, length) {
+      if (!text) return 'No summary available.';
+      return text.length > length ? text.slice(0, length) + '…' : text;
+    }
+
+    function formatDate(date) {
+      if (!date) return 'Unknown';
+      return new Date(date).toLocaleString();
+    }
+
+    document.getElementById('refresh').addEventListener('click', loadFeed);
+    searchInput.addEventListener('input', () => loadFeed());
+    daysSelect.addEventListener('change', loadFeed);
+
+    loadFeed();
+  </script>
+</body>
+</html>

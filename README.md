@@ -1,6 +1,6 @@
 # AIStrike_Crew - A Multi-Agent System for Cybersecurity and Threat Intelligence Gathering
 
-### groq llama  https://github.com/groq-ai/groq-llama 
+### groq llama  https://github.com/groq-ai/groq-llama
 
 ### create more powerful custom scraping tool - blogs seem to be protected - scraper tool needs to be able to scrape from blogs
 
@@ -10,7 +10,7 @@
 
 # StrikeCrew Crew
 
-Welcome to the StrikeCrew Crew project, powered by [crewAI](https://crewai.com). This template is designed to help you set up a multi-agent AI system with ease, leveraging the powerful and flexible framework provided by crewAI. Our goal is to enable your agents to collaborate effectively on complex tasks, maximizing their collective intelligence and capabilities.
+Welcome to the StrikeCrew project. The current sprint focuses on a front-end “Threat Intelligence Radar” that keeps the data relevant and fresh by aggregating trusted cybersecurity feeds and ranking them by recency and severity. The legacy CrewAI research flow remains in the codebase, but the primary entry point now serves an interactive dashboard powered by a lightweight built-in web server.
 
 ## Installation
 
@@ -42,15 +42,31 @@ poetry install
 
 ## Running the Project
 
-To kickstart your crew of AI agents and begin task execution, run this from the root folder of your project:
+To launch the live dashboard from the project root:
 
 ```bash
+poetry install
 poetry run strike_crew
 ```
 
-This command initializes the strike_crew Crew, assembling the agents and assigning them tasks as defined in your configuration.
+Then open http://localhost:8000 in your browser. The API endpoints are:
 
-This example, unmodified, will run the create a `report.md` file with the output of a research on LLMs in the root folder.
+- `GET /api/feed` – returns the ranked feed of recent threat intelligence items.
+- `GET /api/sources` – lists the curated sources powering the dashboard.
+
+### Optional CSec_SaaS integration
+
+If you have a running instance of [CSec_SaaS](https://github.com/GSCrawley/CSec_SaaS/tree/main/CSec_SaaS), you can pipe its feed
+into the Threat Intelligence Radar by setting:
+
+```bash
+export CSEC_SAAS_BASE_URL="https://your-csec-saas-host"
+# optional
+export CSEC_SAAS_API_KEY="<token>"
+```
+
+With these environment variables present, the dashboard merges CSec_SaaS alerts with the curated RSS sources and surfaces them
+in `/api/feed` and the UI automatically.
 
 ## Understanding Your Crew
 
