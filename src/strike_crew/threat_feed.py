@@ -3,14 +3,11 @@ from __future__ import annotations
 import datetime as dt
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 from email.utils import parsedate_to_datetime
 from urllib import request
 from xml.etree import ElementTree as ET
-
-if TYPE_CHECKING:
-    from strike_crew.csec_saas import CSecSaaSClient
 
 
 @dataclass
@@ -53,27 +50,13 @@ DEFAULT_SOURCES: List[ThreatSource] = [
 
 
 class ThreatFeedService:
-    def __init__(
-        self,
-        sources: Optional[List[ThreatSource]] = None,
-        session: Optional[request.OpenerDirector] = None,
-        csec_client: Optional["CSecSaaSClient"] = None,
-    ):
+    def __init__(self, sources: Optional[List[ThreatSource]] = None, session: Optional[request.OpenerDirector] = None):
         self.sources = sources or DEFAULT_SOURCES
         self.session = session or request.build_opener()
-        if csec_client is None:
-            try:
-                from strike_crew.csec_saas import CSecSaaSClient
-
-                csec_client = CSecSaaSClient()
-            except Exception:
-                csec_client = None
-
-        self.csec_client = csec_client
         self.logger = logging.getLogger(__name__)
 
     def fetch_recent(self, days: int = 14, limit: int = 40) -> List[ThreatArticle]:
-        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
+        cutoff = dt.datetime.utcnow().replace(tzinfo=dt.timezone.utc) - dt.timedelta(days=days)
         articles: List[ThreatArticle] = []
 
         for source in self.sources:
@@ -82,13 +65,7 @@ class ThreatFeedService:
             except Exception as exc:
                 self.logger.warning("Failed to pull feed from %s: %s", source.name, exc)
 
-        if self.csec_client and self.csec_client.enabled():
-            try:
-                articles.extend(self.csec_client.fetch_articles(limit=limit, days=days))
-            except Exception as exc:
-                self.logger.warning("CSec_SaaS integration failed: %s", exc)
-
-        articles = [article for article in articles if article.published and article.published >= cutoff]
+        articles = [article for article in articles if not cutoff or (article.published or cutoff) >= cutoff]
         for article in articles:
             article.risk_score = self._score_article(article, cutoff)
 

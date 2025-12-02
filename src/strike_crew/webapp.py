@@ -29,18 +29,7 @@ class ThreatDashboard:
         return {"articles": [article.to_dict() for article in articles], "summary": self.feed_service.summarize(articles)}
 
     def api_sources(self) -> dict:
-        sources = [source.__dict__ for source in self.feed_service.sources]
-        client = getattr(self.feed_service, "csec_client", None)
-        if client and client.enabled():
-            sources.append(
-                {
-                    "name": "CSec_SaaS",
-                    "url": client.base_url or "Configured via CSEC_SAAS_BASE_URL",
-                    "category": "api",
-                    "region": None,
-                }
-            )
-        return sources
+        return [source.__dict__ for source in self.feed_service.sources]
 
     def serve(self, host: str = "0.0.0.0", port: int = 8000):
         dashboard = self
