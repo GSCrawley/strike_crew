@@ -54,6 +54,20 @@ Then open http://localhost:8000 in your browser. The API endpoints are:
 - `GET /api/feed` – returns the ranked feed of recent threat intelligence items.
 - `GET /api/sources` – lists the curated sources powering the dashboard.
 
+### Optional CSec_SaaS integration
+
+If you have a running instance of [CSec_SaaS](https://github.com/GSCrawley/CSec_SaaS/tree/main/CSec_SaaS), you can pipe its feed
+into the Threat Intelligence Radar by setting:
+
+```bash
+export CSEC_SAAS_BASE_URL="https://your-csec-saas-host"
+# optional
+export CSEC_SAAS_API_KEY="<token>"
+```
+
+With these environment variables present, the dashboard merges CSec_SaaS alerts with the curated RSS sources and surfaces them
+in `/api/feed` and the UI automatically.
+
 ## Understanding Your Crew
 
 The strike_crew Crew is composed of multiple AI agents, each with unique roles, goals, and tools. These agents collaborate on a series of tasks, defined in `config/tasks.yaml`, leveraging their collective skills to achieve complex objectives. The `config/agents.yaml` file outlines the capabilities and configurations of each agent in your crew.
