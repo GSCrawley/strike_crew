@@ -73,7 +73,7 @@ class ThreatFeedService:
         self.logger = logging.getLogger(__name__)
 
     def fetch_recent(self, days: int = 14, limit: int = 40) -> List[ThreatArticle]:
-        cutoff = dt.datetime.utcnow().replace(tzinfo=dt.timezone.utc) - dt.timedelta(days=days)
+        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
         articles: List[ThreatArticle] = []
 
         for source in self.sources:
