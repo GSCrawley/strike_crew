@@ -88,7 +88,7 @@ class ThreatFeedService:
             except Exception as exc:
                 self.logger.warning("CSec_SaaS integration failed: %s", exc)
 
-        articles = [article for article in articles if not cutoff or (article.published or cutoff) >= cutoff]
+        articles = [article for article in articles if article.published and article.published >= cutoff]
         for article in articles:
             article.risk_score = self._score_article(article, cutoff)
 
