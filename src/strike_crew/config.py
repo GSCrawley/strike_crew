@@ -1,9 +1,11 @@
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List
 
-class GroqLLMConfig(BaseModel):
+class OllamaLLMConfig(BaseModel):
     temperature: float = Field(default=0)
-    model_name: str = Field(default="llama-3.1-70b-versatile")
+    model_name: str = Field(default="llama3.2:latest")
+    base_url: str = Field(default="http://localhost:11434")
+    timeout: int = Field(default=120)  # Longer timeout for local inference
 
     class Config:
         protected_namespaces = ()
@@ -11,7 +13,7 @@ class GroqLLMConfig(BaseModel):
 class CrewConfig(BaseModel):
     agents_config: Dict[str, Any] = Field(default_factory=dict)
     tasks_config: Dict[str, Any] = Field(default_factory=dict)
-    llm_config: GroqLLMConfig = Field(default_factory=GroqLLMConfig)
+    llm_config: OllamaLLMConfig = Field(default_factory=OllamaLLMConfig)
 
     def __init__(self, **data):
         super().__init__(**data)
@@ -47,5 +49,5 @@ class CrewConfig(BaseModel):
             task_data.setdefault('agent', 'No agent specified')
         return tasks_config
 
-    def get_llm_config(self) -> GroqLLMConfig:
+    def get_llm_config(self) -> OllamaLLMConfig:
         return self.llm_config

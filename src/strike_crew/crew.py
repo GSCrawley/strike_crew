@@ -13,13 +13,12 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Mapping, Type, Callable
 from pydantic import BaseModel, Field
 from crewai import Agent, Crew, Process, Task
-from langchain_groq import ChatGroq
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import ChatResult, ChatGeneration
-from strike_crew.llm import CustomGroqLLM
+from strike_crew.llm import CustomOllamaLLM
 # from langchain_openai import ChatOpenAI
-from strike_crew.config import CrewConfig, GroqLLMConfig
+from strike_crew.config import CrewConfig, OllamaLLMConfig
 from strike_crew.models import EmergingThreat, IOC, TTP, ThreatActor, CVE, Campaign
 from strike_crew.tools.custom_tool import (
     WebSearchTool, WebScraperTool, NLPTool, GraphUpdateTool
@@ -43,11 +42,11 @@ class UserInput(BaseModel):
 class StrikeCrew:
     def __init__(self, config: CrewConfig):
         self.config = config
-        self.groq_llm_config = GroqLLMConfig(
+        self.ollama_llm_config = OllamaLLMConfig(
             temperature=config.llm_config.temperature,
             model_name=config.llm_config.model_name
         )
-        self.llm = CustomGroqLLM(config.get_llm_config())
+        self.llm = CustomOllamaLLM(config.get_llm_config())
         # self.agents = []
         # self.tasks = []
         # self.crew = None
